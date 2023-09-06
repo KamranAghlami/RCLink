@@ -3,7 +3,7 @@
 #include <vector>
 
 #include "hardware/display.h"
-// #include "hardware/battery.h"
+#include "hardware/battery.h"
 
 static const size_t initial_balls = 25;
 
@@ -89,8 +89,8 @@ public:
 
         reset_balls();
 
-        // for (size_t i = 0; i < 10; i++)
-        // m_voltage_level = 0.9f * m_voltage_level + 0.1f * hardware::battery::get().voltage_level();
+        for (size_t i = 0; i < 10; i++)
+            m_voltage_level = 0.9f * m_voltage_level + 0.1f * hardware::battery::get().voltage_level();
 
         auto hud_update = [](lv_timer_t *timer)
         {
@@ -189,7 +189,7 @@ public:
 
     void update_hud()
     {
-        // m_voltage_level = 0.9f * m_voltage_level + 0.1f * hardware::battery::get().voltage_level();
+        m_voltage_level = 0.9f * m_voltage_level + 0.1f * hardware::battery::get().voltage_level();
 
         lv_label_set_text_fmt(m_battery_voltage, "Battery: %lumv", m_voltage_level);
         lv_label_set_text_fmt(m_ball_count, "Balls: %zu", m_balls.size());

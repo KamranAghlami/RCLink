@@ -1,6 +1,6 @@
 #include "battery.h"
 
-#include <Arduino.h>
+// #include <Arduino.h>
 
 #include "config.h"
 
@@ -10,7 +10,7 @@ namespace hardware
 
     battery::battery()
     {
-        pinMode(PIN_BATTERY, INPUT);
+        // pinMode(PIN_BATTERY, INPUT);
     }
 
     battery::~battery()
@@ -19,6 +19,6 @@ namespace hardware
 
     uint32_t battery::voltage_level()
     {
-        return analogReadMilliVolts(PIN_BATTERY) * 2;
+        return 0; // analogReadMilliVolts(PIN_BATTERY) * 2;
     }
 }
