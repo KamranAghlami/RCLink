@@ -12,7 +12,7 @@ namespace hardware
         {
             uint32_t id;
             bool state;
-            unsigned long timestamp;
+            int64_t timestamp;
         };
 
         static void add(uint8_t pin, uint32_t id);

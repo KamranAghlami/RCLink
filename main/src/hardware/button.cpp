@@ -1,6 +1,9 @@
 #include "button.h"
 
-#include <Arduino.h>
+#include <algorithm>
+#include <esp_timer.h>
+
+// #include <Arduino.h>
 
 namespace hardware
 {
@@ -33,11 +36,11 @@ namespace hardware
     void button::tick()
     {
         for (auto &btn : s_buttons)
-            if (btn.m_last_state == digitalRead(btn.m_pin))
+            if (btn.m_last_state == false) // digitalRead(btn.m_pin))
             {
                 btn.m_last_state = !btn.m_last_state;
 
-                s_key_events.push_back({btn.m_id, btn.m_last_state, millis()});
+                s_key_events.push_back({btn.m_id, btn.m_last_state, (esp_timer_get_time() / 1000LL)});
             }
     }
 
@@ -45,9 +48,9 @@ namespace hardware
     {
         button::tick();
 
-        key_event data{.id = 0, .state = false};
+        key_event data{.id = 0, .state = false, .timestamp = 0};
 
-        if (s_key_events.size() && (millis() - s_key_events.front().timestamp > 100))
+        if (s_key_events.size() && ((esp_timer_get_time() / 1000LL) - s_key_events.front().timestamp > 100))
         {
             auto same_state_it = s_key_events.begin() + 1;
             data = s_key_events.front();
@@ -58,18 +61,18 @@ namespace hardware
             s_key_events.erase(s_key_events.begin(), same_state_it);
         }
 
-        return std::move(data);
+        return data;
     }
 
     button::button(uint8_t pin, uint32_t id) : m_pin(pin),
                                                m_id(id),
                                                m_last_state(false)
     {
-        pinMode(m_pin, INPUT_PULLUP);
+        // pinMode(m_pin, INPUT_PULLUP);
     }
 
     button::~button()
     {
-        pinMode(m_pin, INPUT);
+        // pinMode(m_pin, INPUT);
     }
 }

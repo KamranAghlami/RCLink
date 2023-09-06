@@ -6,8 +6,8 @@
 #include <esp_timer.h>
 
 #include "hardware/config.h"
-// #include "hardware/storage.h"
-// #include "hardware/button.h"
+#include "hardware/storage.h"
+#include "hardware/button.h"
 #include "hardware/display.h"
 
 application *application::s_instance = nullptr;
@@ -18,10 +18,10 @@ application::application()
 
     s_instance = this;
 
-    // hardware::storage::mount(hardware::storage::type::internal, LV_FS_POSIX_PATH);
+    hardware::storage::mount(hardware::storage::type::internal, LV_FS_POSIX_PATH);
 
-    // hardware::button::add(PIN_BUTTON_1, 0b00000001);
-    // hardware::button::add(PIN_BUTTON_2, 0b00000010);
+    hardware::button::add(PIN_BUTTON_1, 0b00000001);
+    hardware::button::add(PIN_BUTTON_2, 0b00000010);
 
     auto &display = hardware::display::get();
 
@@ -55,37 +55,37 @@ application::application()
 
     display.set_transfer_done_callback(on_transfer_done, &m_disp_drv);
 
-    // lv_indev_drv_init(&m_indev_drv);
+    lv_indev_drv_init(&m_indev_drv);
 
-    // auto read_cb = [](lv_indev_drv_t *drv, lv_indev_data_t *data)
-    // {
-    //     auto event = hardware::button::get_data();
+    auto read_cb = [](lv_indev_drv_t *drv, lv_indev_data_t *data)
+    {
+        auto event = hardware::button::get_data();
 
-    //     switch (event.id)
-    //     {
-    //     case 0b00000001:
-    //         data->key = LV_KEY_UP;
-    //         break;
+        switch (event.id)
+        {
+        case 0b00000001:
+            data->key = LV_KEY_UP;
+            break;
 
-    //     case 0b00000010:
-    //         data->key = LV_KEY_DOWN;
-    //         break;
+        case 0b00000010:
+            data->key = LV_KEY_DOWN;
+            break;
 
-    //     case 0b00000011:
-    //         data->key = LV_KEY_ENTER;
-    //         break;
+        case 0b00000011:
+            data->key = LV_KEY_ENTER;
+            break;
 
-    //     default:
-    //         break;
-    //     }
+        default:
+            break;
+        }
 
-    //     data->state = event.state ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
-    // };
+        data->state = event.state ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
+    };
 
-    // m_indev_drv.type = LV_INDEV_TYPE_KEYPAD;
-    // m_indev_drv.read_cb = read_cb;
+    m_indev_drv.type = LV_INDEV_TYPE_KEYPAD;
+    m_indev_drv.read_cb = read_cb;
 
-    // lv_indev_drv_register(&m_indev_drv);
+    lv_indev_drv_register(&m_indev_drv);
 
     auto on_create = [](void *userdata)
     {
@@ -120,7 +120,7 @@ application::~application()
 
     lv_deinit();
 
-    // hardware::storage::unmount(LV_FS_POSIX_PATH);
+    hardware::storage::unmount(LV_FS_POSIX_PATH);
 }
 
 application *create_application();

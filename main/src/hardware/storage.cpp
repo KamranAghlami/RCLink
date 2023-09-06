@@ -1,6 +1,7 @@
 #include "storage.h"
 
 #include <map>
+#include <string>
 
 #include <esp_log.h>
 #include <esp_vfs_fat.h>
