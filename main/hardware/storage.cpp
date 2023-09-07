@@ -21,6 +21,7 @@ namespace hardware
                 .format_if_mount_failed = true,
                 .max_files = 4,
                 .allocation_unit_size = CONFIG_WL_SECTOR_SIZE,
+                .disk_status_check_enable = false,
             };
 
             wl_handle_t wl_handle = WL_INVALID_HANDLE;
