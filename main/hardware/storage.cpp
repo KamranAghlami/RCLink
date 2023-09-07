@@ -25,7 +25,7 @@ namespace hardware
 
             wl_handle_t wl_handle = WL_INVALID_HANDLE;
 
-            ESP_ERROR_CHECK(esp_vfs_fat_spiflash_mount(mount_point, "storage", &mount_config, &wl_handle));
+            ESP_ERROR_CHECK(esp_vfs_fat_spiflash_mount_rw_wl(mount_point, "storage", &mount_config, &wl_handle));
 
             handles[mount_point] = wl_handle;
         }
@@ -37,7 +37,7 @@ namespace hardware
 
             auto wl_handle = handles[mount_point];
 
-            ESP_ERROR_CHECK(esp_vfs_fat_spiflash_unmount(mount_point, wl_handle));
+            ESP_ERROR_CHECK(esp_vfs_fat_spiflash_unmount_rw_wl(mount_point, wl_handle));
 
             handles.erase(mount_point);
         }
