@@ -24,10 +24,10 @@ struct ball
     } velocity;
 };
 
-class sandbox : public application
+class example : public application
 {
 public:
-    sandbox() : m_width(hardware::display::get().width()),
+    example() : m_width(hardware::display::get().width()),
                 m_height(hardware::display::get().height()),
                 m_screen(lv_scr_act())
     {
@@ -42,7 +42,7 @@ public:
 
         auto on_key = [](lv_event_t *e)
         {
-            auto app = static_cast<sandbox *>(lv_event_get_user_data(e));
+            auto app = static_cast<example *>(lv_event_get_user_data(e));
             auto key = lv_event_get_key(e);
 
             switch (key)
@@ -64,7 +64,7 @@ public:
         lv_obj_add_event_cb(m_screen, on_key, LV_EVENT_KEY, this);
     }
 
-    ~sandbox()
+    ~example()
     {
         while (m_balls.size())
             remove_ball();
@@ -94,7 +94,7 @@ public:
 
         auto hud_update = [](lv_timer_t *timer)
         {
-            static_cast<sandbox *>(timer->user_data)->update_hud();
+            static_cast<example *>(timer->user_data)->update_hud();
         };
 
         lv_timer_create(hud_update, 200, this);
@@ -172,7 +172,7 @@ public:
 
         auto timer_cb = [](lv_timer_t *timer)
         {
-            auto app = static_cast<sandbox *>(timer->user_data);
+            auto app = static_cast<example *>(timer->user_data);
 
             if (app->m_balls.size() == initial_balls)
             {
@@ -216,5 +216,5 @@ private:
 
 application *create_application()
 {
-    return new sandbox();
+    return new example();
 }
