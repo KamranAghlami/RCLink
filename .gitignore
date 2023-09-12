@@ -1,5 +1,6 @@
 .vscode
 [Bb][Uu][Ii][Ll][Dd]
+components
 debug.log
 dependencies.lock
 managed_components
