@@ -72,6 +72,7 @@ public:
         lv_group_del(m_group);
     }
 
+private:
     void on_create() override
     {
         lv_obj_clear_flag(m_screen, LV_OBJ_FLAG_SCROLLABLE);
@@ -202,7 +203,6 @@ public:
         lv_label_set_text_fmt(m_ball_count, "Balls: %zu", m_balls.size());
     }
 
-private:
     const uint16_t m_width;
     const uint16_t m_height;
 
