@@ -29,16 +29,16 @@ class example : public application
 public:
     example() : m_width(hardware::display::get().width()),
                 m_height(hardware::display::get().height()),
+                m_group(lv_group_create()),
                 m_screen(lv_scr_act())
     {
-        lv_group_t *group = lv_group_create();
         lv_indev_t *indev = nullptr;
 
         while ((indev = lv_indev_get_next(indev)))
             if (lv_indev_get_type(indev) == LV_INDEV_TYPE_KEYPAD)
-                lv_indev_set_group(indev, group);
+                lv_indev_set_group(indev, m_group);
 
-        lv_group_add_obj(group, m_screen);
+        lv_group_add_obj(m_group, m_screen);
 
         auto on_key = [](lv_event_t *e)
         {
@@ -68,6 +68,8 @@ public:
     {
         while (m_balls.size())
             remove_ball();
+
+        lv_group_del(m_group);
     }
 
     void on_create() override
@@ -204,7 +206,9 @@ private:
     const uint16_t m_width;
     const uint16_t m_height;
 
+    lv_group_t *m_group;
     lv_obj_t *m_screen;
+
     lv_obj_t *m_battery_voltage;
     lv_obj_t *m_ball_count;
 
