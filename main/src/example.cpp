@@ -1,4 +1,4 @@
-#include "core/application.h"
+#include "application/application.h"
 
 #include <vector>
 
@@ -218,7 +218,7 @@ private:
     uint32_t m_voltage_level = 0;
 };
 
-application *create_application()
+std::unique_ptr<application> create_application()
 {
-    return new example();
+    return std::make_unique<example>();
 }
