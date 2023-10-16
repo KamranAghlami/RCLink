@@ -4,9 +4,12 @@
 
 #include <esp_log.h>
 
+extern "C"
+{
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
+}
 
 #include "hardware/display.h"
 #include "hardware/battery.h"
