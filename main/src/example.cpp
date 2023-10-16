@@ -45,7 +45,7 @@ public:
         luaL_openlibs(m_lua_state);
 
         if (luaL_loadfile(m_lua_state, "/main.lua") || lua_pcall(m_lua_state, 0, 0, 0))
-            ESP_LOGE("Lua", "Error: %s", lua_tostring(m_lua_state, -1));
+            ESP_LOGE("Lua", "%s", lua_tostring(m_lua_state, -1));
 
         lv_indev_t *indev = nullptr;
 
