@@ -37,7 +37,7 @@ public:
                 m_screen(lv_scr_act())
     {
         m_sol_state.open_libraries();
-        m_sol_state.script_file("/main.lua");
+        m_sol_state.script_file("/scripts/main.lua");
 
         lv_indev_t *indev = nullptr;
 
