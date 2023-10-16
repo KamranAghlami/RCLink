@@ -2,6 +2,12 @@
 
 #include <vector>
 
+#include <esp_log.h>
+
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
+
 #include "hardware/display.h"
 #include "hardware/battery.h"
 
@@ -27,11 +33,17 @@ struct ball
 class example : public application
 {
 public:
-    example() : m_width(hardware::display::get().width()),
+    example() : m_lua_state(luaL_newstate()),
+                m_width(hardware::display::get().width()),
                 m_height(hardware::display::get().height()),
                 m_group(lv_group_create()),
                 m_screen(lv_scr_act())
     {
+        luaL_openlibs(m_lua_state);
+
+        if (luaL_loadfile(m_lua_state, "/main.lua") || lua_pcall(m_lua_state, 0, 0, 0))
+            ESP_LOGE("Lua", "Error: %s", lua_tostring(m_lua_state, -1));
+
         lv_indev_t *indev = nullptr;
 
         while ((indev = lv_indev_get_next(indev)))
@@ -70,6 +82,8 @@ public:
             remove_ball();
 
         lv_group_del(m_group);
+
+        lua_close(m_lua_state);
     }
 
 private:
@@ -202,6 +216,8 @@ private:
         lv_label_set_text_fmt(m_battery_voltage, "Battery: %lumv", m_voltage_level);
         lv_label_set_text_fmt(m_ball_count, "Balls: %zu", m_balls.size());
     }
+
+    lua_State *m_lua_state;
 
     const uint16_t m_width;
     const uint16_t m_height;
