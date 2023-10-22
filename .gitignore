@@ -5,4 +5,4 @@ debug.log
 dependencies.lock
 managed_components
 partition_table
-sdkconfig.old
+sdkconfig.*
