@@ -19,25 +19,22 @@
     <script>
         const terminal = new Terminal();
         const fitAddon = new FitAddon.FitAddon();
-        // const attachAddon = new AttachAddon(webSocket);
 
         terminal.loadAddon(fitAddon);
-        // terminal.loadAddon(attachAddon);
+        fitAddon.fit();
+
+        window.addEventListener('resize', () => fitAddon.fit());
 
         terminal.open(document.getElementById('terminal'));
         fitAddon.fit();
 
         window.addEventListener('resize', () => fitAddon.fit());
 
-        terminal.onData(data => {
-            terminal.write(data);
-        });
+        const socket = new WebSocket('ws://localhost:3001');
 
-        terminal.write('\x1B[1;3;32mTDisplayS3\x1B[0m $ ');
+        const attachAddon = new AttachAddon.AttachAddon(socket);
 
-        terminal.onKey(e => {
-            terminal.write(e.key);
-        });
+        terminal.loadAddon(attachAddon);
     </script>
 </body>
 
