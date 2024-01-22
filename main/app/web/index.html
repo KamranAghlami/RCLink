@@ -28,6 +28,7 @@
         terminal.loadAddon(fitAddon);
         terminal.loadAddon(attachAddon);
         terminal.open(document.getElementById('terminal'));
+
         fitAddon.fit();
 
         window.addEventListener('resize', () => fitAddon.fit());
