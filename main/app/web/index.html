@@ -20,18 +20,17 @@
         const terminal = new Terminal();
         const fitAddon = new FitAddon.FitAddon();
 
-        terminal.loadAddon(fitAddon);
-        terminal.open(document.getElementById('terminal'));
-        fitAddon.fit();
-
-        window.addEventListener('resize', () => fitAddon.fit());
-
         const port = parseInt(window.location.port, 10) + 1;
         const address = `ws://${window.location.hostname}:${port}`;
         const socket = new WebSocket(address);
         const attachAddon = new AttachAddon.AttachAddon(socket);
 
+        terminal.loadAddon(fitAddon);
         terminal.loadAddon(attachAddon);
+        terminal.open(document.getElementById('terminal'));
+        fitAddon.fit();
+
+        window.addEventListener('resize', () => fitAddon.fit());
     </script>
 </body>
 
