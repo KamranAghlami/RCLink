@@ -21,10 +21,6 @@
         const fitAddon = new FitAddon.FitAddon();
 
         terminal.loadAddon(fitAddon);
-        fitAddon.fit();
-
-        window.addEventListener('resize', () => fitAddon.fit());
-
         terminal.open(document.getElementById('terminal'));
         fitAddon.fit();
 
