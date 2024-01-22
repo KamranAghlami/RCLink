@@ -18,14 +18,20 @@
     <div id="terminal"></div>
     <script>
         const terminal = new Terminal();
-        // const fitAddon = new FitAddon();
+        const fitAddon = new FitAddon.FitAddon();
         // const attachAddon = new AttachAddon(webSocket);
 
-        // terminal.loadAddon(fitAddon);
+        terminal.loadAddon(fitAddon);
         // terminal.loadAddon(attachAddon);
 
         terminal.open(document.getElementById('terminal'));
-        // fitAddon.fit();
+        fitAddon.fit();
+
+        window.addEventListener('resize', () => fitAddon.fit());
+
+        terminal.onData(data => {
+            terminal.write(data);
+        });
 
         terminal.write('\x1B[1;3;32mTDisplayS3\x1B[0m $ ');
 
