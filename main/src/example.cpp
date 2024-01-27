@@ -1,9 +1,9 @@
 #include "application/application.h"
 
+#include <sys/stat.h>
 #include <vector>
 
 #include <esp_log.h>
-
 #include <sol/sol.hpp>
 
 #include "hardware/display.h"
@@ -37,7 +37,13 @@ public:
                 m_screen(lv_scr_act())
     {
         m_sol_state.open_libraries();
-        m_sol_state.script_file("/scripts/main.lua");
+
+        {
+            struct stat file_stat;
+
+            if (!stat("/scripts/main.lua", &file_stat))
+                m_sol_state.script_file("/scripts/main.lua");
+        }
 
         lv_indev_t *indev = nullptr;
 
