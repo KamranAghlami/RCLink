@@ -111,7 +111,7 @@ static esp_err_t get_handler(httpd_req_t *request)
     if (auto error = add_content_type(request, file_path) != ESP_OK)
         return error;
 
-    uint8_t buffer[4U * 1024U];
+    uint8_t buffer[1024U];
     size_t read_bytes = 0;
 
     do
@@ -137,6 +137,15 @@ static esp_err_t get_handler(httpd_req_t *request)
     return ESP_OK;
 }
 
+static esp_err_t get_index_handler(httpd_req_t *request)
+{
+    httpd_resp_set_status(request, "307 Temporary Redirect");
+    httpd_resp_set_hdr(request, "Location", "/");
+    httpd_resp_send(request, NULL, 0);
+
+    return ESP_OK;
+}
+
 server::server(const uint16_t port, const std::string &base_path) : mp_implementation(std::make_unique<server_implementation>())
 {
     mp_implementation->base_path = base_path;
@@ -156,6 +165,15 @@ server::server(const uint16_t port, const std::string &base_path) : mp_implement
     };
 
     ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->httpd_handle, &get));
+
+    // const httpd_uri_t get_index = {
+    //     .uri = "/index.html",
+    //     .method = HTTP_GET,
+    //     .handler = get_index_handler,
+    //     .user_ctx = nullptr,
+    // };
+
+    // ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->httpd_handle, &get_index));
 }
 
 server::~server()
