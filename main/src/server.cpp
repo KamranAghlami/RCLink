@@ -72,6 +72,15 @@ static esp_err_t add_content_type(httpd_req_t *request, const char *file_path)
     return httpd_resp_set_type(request, content_type);
 }
 
+static esp_err_t get_index_handler(httpd_req_t *request)
+{
+    httpd_resp_set_status(request, "307 Temporary Redirect");
+    httpd_resp_set_hdr(request, "Location", "/");
+    httpd_resp_send(request, NULL, 0);
+
+    return ESP_OK;
+}
+
 static esp_err_t get_handler(httpd_req_t *request)
 {
     auto server_impl = static_cast<server_implementation *>(request->user_ctx);
@@ -81,12 +90,15 @@ static esp_err_t get_handler(httpd_req_t *request)
 
     const size_t file_path_length = strlen(file_path);
 
-    if (!file_path_length || file_path[file_path_length - 1] == '/')
+    if (!file_path_length)
     {
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
 
         return ESP_FAIL;
     }
+
+    if (!strcmp(file_path, server_impl->base_path.c_str()))
+        strcat(file_path, "/index.html");
 
     {
         struct stat file_stat;
@@ -137,15 +149,6 @@ static esp_err_t get_handler(httpd_req_t *request)
     return ESP_OK;
 }
 
-static esp_err_t get_index_handler(httpd_req_t *request)
-{
-    httpd_resp_set_status(request, "307 Temporary Redirect");
-    httpd_resp_set_hdr(request, "Location", "/");
-    httpd_resp_send(request, NULL, 0);
-
-    return ESP_OK;
-}
-
 server::server(const uint16_t port, const std::string &base_path) : mp_implementation(std::make_unique<server_implementation>())
 {
     mp_implementation->base_path = base_path;
@@ -165,15 +168,6 @@ server::server(const uint16_t port, const std::string &base_path) : mp_implement
     };
 
     ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->httpd_handle, &get));
-
-    // const httpd_uri_t get_index = {
-    //     .uri = "/index.html",
-    //     .method = HTTP_GET,
-    //     .handler = get_index_handler,
-    //     .user_ctx = nullptr,
-    // };
-
-    // ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->httpd_handle, &get_index));
 }
 
 server::~server()
