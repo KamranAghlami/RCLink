@@ -12,6 +12,5 @@ public:
     ~server();
 
 private:
-    const std::string m_base_path;
     std::unique_ptr<server_implementation> mp_implementation;
 };
