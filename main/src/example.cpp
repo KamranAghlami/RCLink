@@ -8,8 +8,9 @@
 
 #include "hardware/display.h"
 #include "hardware/battery.h"
+#include "server.h"
 
-static const size_t initial_balls = 25;
+constexpr size_t initial_balls = 25;
 
 struct ball
 {
@@ -31,7 +32,8 @@ struct ball
 class example : public application
 {
 public:
-    example() : m_width(hardware::display::get().width()),
+    example() : m_server(80, LV_FS_POSIX_PATH "/web"),
+                m_width(hardware::display::get().width()),
                 m_height(hardware::display::get().height()),
                 m_group(lv_group_create()),
                 m_screen(lv_scr_act())
@@ -217,6 +219,7 @@ private:
     }
 
     sol::state m_sol_state;
+    server m_server;
 
     const uint16_t m_width;
     const uint16_t m_height;
