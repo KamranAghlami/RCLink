@@ -8,7 +8,6 @@
 
 #include "hardware/display.h"
 #include "hardware/battery.h"
-#include "hardware/wifi.h"
 
 static const size_t initial_balls = 25;
 
@@ -68,7 +67,7 @@ public:
                 app->remove_ball();
                 break;
             case LV_KEY_ENTER:
-                hardware::wifi::get().init();
+                app->reset_balls();
                 break;
             default:
                 break;
