@@ -37,9 +37,9 @@
 
         console.clear = () => terminal.clear();
         console.log = message => terminal.writeln(message);
-        console.error = message => terminal.writeln('\x1B[1;31m' + message + '\x1B[0m');
         console.info = message => terminal.writeln('\x1B[1;32m' + message + '\x1B[0m');
         console.warn = message => terminal.writeln('\x1B[1;33m' + message + '\x1B[0m');
+        console.error = message => terminal.writeln('\x1B[1;31m' + message + '\x1B[0m');
     </script>
 </body>
 
