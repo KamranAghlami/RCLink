@@ -112,7 +112,7 @@ static esp_err_t get_handler(httpd_req_t *request)
         {
             httpd_resp_send_err(request, HTTPD_404_NOT_FOUND, nullptr);
 
-            ESP_LOGI(TAG, "not found! file_path: %s", file_path);
+            ESP_LOGW(TAG, "not found! file_path: %s", file_path);
 
             return ESP_FAIL;
         }
