@@ -169,7 +169,30 @@ static esp_err_t get_handler(httpd_req_t *request)
 
 static esp_err_t ws_handler(httpd_req_t *request)
 {
-    return ESP_FAIL;
+    if (request->method == HTTP_GET)
+        return ESP_OK;
+
+    httpd_ws_frame_t ws_frame = {};
+
+    ESP_ERROR_CHECK(httpd_ws_recv_frame(request, &ws_frame, 0));
+
+    if (!ws_frame.len)
+        return ESP_OK;
+
+    uint8_t buffer[128] = {0};
+
+    if (ws_frame.len + 1 > sizeof(buffer))
+        return ESP_FAIL;
+
+    ws_frame.payload = buffer;
+
+    ESP_ERROR_CHECK(httpd_ws_recv_frame(request, &ws_frame, ws_frame.len));
+
+    ESP_LOGI(TAG, "type: %d, char: %c, hex: %02x", ws_frame.type, ws_frame.payload[0], ws_frame.payload[0]);
+
+    ESP_ERROR_CHECK(httpd_ws_send_frame(request, &ws_frame));
+
+    return ESP_OK;
 }
 
 server::server(const uint16_t port, const std::string &base_path) : mp_implementation(std::make_unique<server_implementation>())
