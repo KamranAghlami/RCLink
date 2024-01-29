@@ -54,19 +54,21 @@ static esp_err_t add_content_type(httpd_req_t *request, const char *file_path)
 
     const char *content_type = "text/plain";
 
-    if (strcmp(file_extension, "html"))
+    if (!strcmp(file_extension, "html"))
         content_type = "text/html";
-    else if (strcmp(file_extension, "css"))
+    else if (!strcmp(file_extension, "css"))
         content_type = "text/css";
-    else if (strcmp(file_extension, "js"))
+    else if (!strcmp(file_extension, "js"))
         content_type = "application/javascript";
-    else if (strcmp(file_extension, "wasm"))
+    else if (!strcmp(file_extension, "wasm"))
         content_type = "application/wasm";
-    else if (strcmp(file_extension, "png"))
+    else if (!strcmp(file_extension, "png"))
         content_type = "image/png";
-    else if (strcmp(file_extension, "ico"))
+    else if (!strcmp(file_extension, "svg"))
+        content_type = "image/svg+xml";
+    else if (!strcmp(file_extension, "ico"))
         content_type = "image/x-icon";
-    else if (strcmp(file_extension, "bin"))
+    else if (!strcmp(file_extension, "bin"))
         content_type = "application/octet-stream";
 
     return httpd_resp_set_type(request, content_type);
@@ -83,29 +85,34 @@ static esp_err_t get_index_handler(httpd_req_t *request)
 
 static esp_err_t get_handler(httpd_req_t *request)
 {
-    auto server_impl = static_cast<server_implementation *>(request->user_ctx);
+    const auto server_impl = static_cast<server_implementation *>(request->user_ctx);
+    const auto base_path_length = server_impl->base_path.size();
     char file_path[CONFIG_LITTLEFS_OBJ_NAME_LEN] = {0};
 
     file_path_from_uri(request->uri, server_impl->base_path.c_str(), file_path, sizeof(file_path));
 
-    const size_t file_path_length = strlen(file_path);
-
-    if (!file_path_length)
+    if (!*file_path)
     {
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
 
         return ESP_FAIL;
     }
 
-    if (!strcmp(file_path, server_impl->base_path.c_str()))
-        strcat(file_path, "/index.html");
+    const char *file_name = file_path + base_path_length;
+
+    if (!strcmp(file_name, "/"))
+        strcat(file_path, "index.html");
+    else if (!strcmp(file_name, "/index.html"))
+        return get_index_handler(request);
 
     {
         struct stat file_stat;
 
-        if (stat(file_path, &file_stat))
+        if (file_path[strlen(file_path) - 1] == '/' || stat(file_path, &file_stat))
         {
             httpd_resp_send_err(request, HTTPD_404_NOT_FOUND, nullptr);
+
+            ESP_LOGI(TAG, "not found! file_path: %s", file_path);
 
             return ESP_FAIL;
         }
