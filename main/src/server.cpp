@@ -177,10 +177,10 @@ static esp_err_t ws_handler(httpd_req_t *request)
     if (httpd_ws_recv_frame(request, &ws_frame, 0) != ESP_OK)
         return ESP_FAIL;
 
+    uint8_t buffer[8] = {0};
+
     if (ws_frame.len)
     {
-        uint8_t buffer[8] = {0};
-
         if (ws_frame.len + 1 > sizeof(buffer))
             return ESP_FAIL;
 
@@ -190,6 +190,21 @@ static esp_err_t ws_handler(httpd_req_t *request)
             return ESP_FAIL;
 
         ESP_LOGI(TAG, "new frame! type: %d, size: %zu, value: %02x", ws_frame.type, ws_frame.len, ws_frame.payload[0]);
+    }
+
+    if (buffer[0] == '\x0d')
+    {
+        buffer[0] = '\x0a';
+        buffer[1] = '\x0d';
+        ws_frame.len = 2;
+    }
+
+    if (buffer[0] == '\x7f')
+    {
+        buffer[0] = '\x08';
+        buffer[1] = ' ';
+        buffer[2] = '\x08';
+        ws_frame.len = 3;
     }
 
     if (httpd_ws_send_frame(request, &ws_frame) != ESP_OK)
