@@ -138,8 +138,8 @@ static esp_err_t get_handler(httpd_req_t *request)
         return ESP_FAIL;
     }
 
-    if (auto error = add_content_type(request, file_path) != ESP_OK)
-        return error;
+    if (add_content_type(request, file_path) != ESP_OK)
+        return ESP_FAIL;
 
     uint8_t buffer[1024U];
     size_t read_bytes = 0;
@@ -174,23 +174,26 @@ static esp_err_t ws_handler(httpd_req_t *request)
 
     httpd_ws_frame_t ws_frame = {};
 
-    ESP_ERROR_CHECK(httpd_ws_recv_frame(request, &ws_frame, 0));
-
-    if (!ws_frame.len)
-        return ESP_OK;
-
-    uint8_t buffer[128] = {0};
-
-    if (ws_frame.len + 1 > sizeof(buffer))
+    if (httpd_ws_recv_frame(request, &ws_frame, 0) != ESP_OK)
         return ESP_FAIL;
 
-    ws_frame.payload = buffer;
+    if (ws_frame.len)
+    {
+        uint8_t buffer[8] = {0};
 
-    ESP_ERROR_CHECK(httpd_ws_recv_frame(request, &ws_frame, ws_frame.len));
+        if (ws_frame.len + 1 > sizeof(buffer))
+            return ESP_FAIL;
 
-    ESP_LOGI(TAG, "type: %d, char: %c, hex: %02x", ws_frame.type, ws_frame.payload[0], ws_frame.payload[0]);
+        ws_frame.payload = buffer;
 
-    ESP_ERROR_CHECK(httpd_ws_send_frame(request, &ws_frame));
+        if (httpd_ws_recv_frame(request, &ws_frame, ws_frame.len) != ESP_OK)
+            return ESP_FAIL;
+
+        ESP_LOGI(TAG, "new frame! type: %d, size: %zu, value: %02x", ws_frame.type, ws_frame.len, ws_frame.payload[0]);
+    }
+
+    if (httpd_ws_send_frame(request, &ws_frame) != ESP_OK)
+        return ESP_FAIL;
 
     return ESP_OK;
 }
