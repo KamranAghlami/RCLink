@@ -8,10 +8,21 @@
 
 constexpr const char *TAG = "server";
 
+struct file_server
+{
+    httpd_handle_t httpd_handle;
+    std::string base_path;
+};
+
+struct websocket_server
+{
+    httpd_handle_t httpd_handle;
+};
+
 struct server_implementation
 {
-    std::string base_path;
-    httpd_handle_t httpd_handle;
+    file_server file_server_ctx;
+    websocket_server websocket_server_ctx;
 };
 
 static void file_path_from_uri(const char *uri, const char *base_path, char *file_path, const size_t file_path_max)
@@ -85,7 +96,7 @@ static esp_err_t get_index_handler(httpd_req_t *request)
 
 static esp_err_t get_handler(httpd_req_t *request)
 {
-    const auto server_impl = static_cast<server_implementation *>(request->user_ctx);
+    const auto server_impl = static_cast<file_server *>(request->user_ctx);
     const auto base_path_length = server_impl->base_path.size();
     char file_path[CONFIG_LITTLEFS_OBJ_NAME_LEN] = {0};
 
@@ -156,28 +167,58 @@ static esp_err_t get_handler(httpd_req_t *request)
     return ESP_OK;
 }
 
+static esp_err_t ws_handler(httpd_req_t *request)
+{
+    return ESP_FAIL;
+}
+
 server::server(const uint16_t port, const std::string &base_path) : mp_implementation(std::make_unique<server_implementation>())
 {
-    mp_implementation->base_path = base_path;
+    mp_implementation->file_server_ctx.base_path = base_path;
 
     httpd_config_t httpd_config = HTTPD_DEFAULT_CONFIG();
 
     httpd_config.core_id = 1;
+    httpd_config.server_port = port;
     httpd_config.uri_match_fn = httpd_uri_match_wildcard;
 
-    ESP_ERROR_CHECK(httpd_start(&mp_implementation->httpd_handle, &httpd_config));
+    ESP_ERROR_CHECK(httpd_start(&mp_implementation->file_server_ctx.httpd_handle, &httpd_config));
 
     const httpd_uri_t get = {
         .uri = "/*",
         .method = HTTP_GET,
         .handler = get_handler,
-        .user_ctx = mp_implementation.get(),
+        .user_ctx = &mp_implementation.get()->file_server_ctx,
+        .is_websocket = false,
+        .handle_ws_control_frames = false,
+        .supported_subprotocol = nullptr,
     };
 
-    ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->httpd_handle, &get));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->file_server_ctx.httpd_handle, &get));
+
+    httpd_config_t httpd_ws_config = HTTPD_DEFAULT_CONFIG();
+
+    httpd_ws_config.core_id = 1;
+    httpd_ws_config.server_port = httpd_config.server_port + 1;
+    httpd_ws_config.ctrl_port = httpd_config.ctrl_port + 1;
+
+    ESP_ERROR_CHECK(httpd_start(&mp_implementation->websocket_server_ctx.httpd_handle, &httpd_ws_config));
+
+    const httpd_uri_t ws_get = {
+        .uri = "/",
+        .method = HTTP_GET,
+        .handler = ws_handler,
+        .user_ctx = &mp_implementation.get()->websocket_server_ctx,
+        .is_websocket = true,
+        .handle_ws_control_frames = false,
+        .supported_subprotocol = nullptr,
+    };
+
+    ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->websocket_server_ctx.httpd_handle, &ws_get));
 }
 
 server::~server()
 {
-    ESP_ERROR_CHECK(httpd_stop(mp_implementation->httpd_handle));
+    ESP_ERROR_CHECK(httpd_stop(mp_implementation->websocket_server_ctx.httpd_handle));
+    ESP_ERROR_CHECK(httpd_stop(mp_implementation->websocket_server_ctx.httpd_handle));
 }
