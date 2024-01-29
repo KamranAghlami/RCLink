@@ -189,7 +189,8 @@ static esp_err_t ws_handler(httpd_req_t *request)
         if (httpd_ws_recv_frame(request, &ws_frame, ws_frame.len) != ESP_OK)
             return ESP_FAIL;
 
-        ESP_LOGI(TAG, "new frame! type: %d, size: %zu, value: %02x", ws_frame.type, ws_frame.len, ws_frame.payload[0]);
+        ESP_LOGI(TAG, "new frame! type: %d, size: %zu, value: %02x %02x %02x %02x",
+                 ws_frame.type, ws_frame.len, ws_frame.payload[0], ws_frame.payload[1], ws_frame.payload[2], ws_frame.payload[3]);
     }
 
     if (buffer[0] == '\x0d')
