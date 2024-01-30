@@ -343,7 +343,7 @@ server::server(const uint16_t port, const std::string &base_path) : mp_implement
     httpd_config.task_priority = SERVER_PRIORITY;
     httpd_config.core_id = SERVER_CORE_ID;
     httpd_config.server_port = port;
-    httpd_config.max_open_sockets = 11;
+    httpd_config.max_open_sockets = std::min((2U * WORKER_COUNT) + 3U, 11U);
     httpd_config.uri_match_fn = httpd_uri_match_wildcard;
 
     ESP_ERROR_CHECK(httpd_start(&mp_implementation->file_server.httpd_handle, &httpd_config));
