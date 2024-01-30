@@ -62,7 +62,7 @@ static void request_worker_task(void *argument)
         }
     }
 
-    vTaskDelete(NULL);
+    vTaskDelete(nullptr);
 }
 
 static void start_workers(file_server_context &file_server)
@@ -161,7 +161,7 @@ static esp_err_t get_index_handler(httpd_req_t *request)
 {
     httpd_resp_set_status(request, "307 Temporary Redirect");
     httpd_resp_set_hdr(request, "Location", "/");
-    httpd_resp_send(request, NULL, 0);
+    httpd_resp_send(request, nullptr, 0);
 
     return ESP_OK;
 }
@@ -270,7 +270,7 @@ static esp_err_t get_handler(httpd_req_t *request)
                 {
                     fclose(file);
 
-                    httpd_resp_send_chunk(request, NULL, 0);
+                    httpd_resp_send_chunk(request, nullptr, 0);
                     httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
 
                     return ESP_FAIL;
@@ -280,7 +280,7 @@ static esp_err_t get_handler(httpd_req_t *request)
 
     fclose(file);
 
-    httpd_resp_send_chunk(request, NULL, 0);
+    httpd_resp_send_chunk(request, nullptr, 0);
 
     ESP_LOGI(TAG, "sent: %s", file_path);
 
