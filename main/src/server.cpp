@@ -49,9 +49,6 @@ static void request_worker_task(void *argument)
     {
         xSemaphoreGive(file_server->workers_semaphore);
 
-        if (!file_server->is_running)
-            break;
-
         request_context request;
 
         if (xQueueReceive(file_server->requests_queue, &request, portMAX_DELAY))
@@ -61,8 +58,6 @@ static void request_worker_task(void *argument)
             httpd_req_async_handler_complete(request.request);
         }
     }
-
-    vTaskDelete(nullptr);
 }
 
 static void start_workers(file_server_context &file_server)
@@ -89,19 +84,11 @@ static void stop_workers(file_server_context &file_server)
     while (xQueueReceive(file_server.requests_queue, &request, pdMS_TO_TICKS(100)))
         httpd_req_async_handler_complete(request.request);
 
-    for (size_t i = 0; i < WORKER_COUNT; i++)
-    {
-        request = {
-            .request = nullptr,
-            .handler = [](httpd_req_t *) -> esp_err_t
-            { return ESP_OK; },
-        };
-
-        xQueueSend(file_server.requests_queue, &request, portMAX_DELAY);
-    }
-
     while (uxSemaphoreGetCount(file_server.workers_semaphore) != WORKER_COUNT)
         vTaskDelay(pdMS_TO_TICKS(100));
+
+    for (size_t i = 0; i < WORKER_COUNT; i++)
+        vTaskDelete(file_server.workers[i]);
 
     vQueueDelete(file_server.requests_queue);
     vSemaphoreDelete(file_server.workers_semaphore);
