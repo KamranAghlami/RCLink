@@ -20,7 +20,7 @@ struct request_context
     request_handler handler;
 };
 
-struct file_server
+struct file_server_context
 {
     httpd_handle_t httpd_handle;
     SemaphoreHandle_t workers_semaphore;
@@ -30,31 +30,31 @@ struct file_server
     bool is_running;
 };
 
-struct websocket_server
+struct websocket_server_context
 {
     httpd_handle_t httpd_handle;
 };
 
 struct server_implementation
 {
-    file_server file_server_ctx;
-    websocket_server websocket_server_ctx;
+    file_server_context file_server;
+    websocket_server_context websocket_server;
 };
 
 static void request_worker_task(void *argument)
 {
-    const auto server = static_cast<file_server *>(argument);
+    const auto file_server = static_cast<file_server_context *>(argument);
 
-    while (server->is_running)
+    while (file_server->is_running)
     {
-        xSemaphoreGive(server->workers_semaphore);
+        xSemaphoreGive(file_server->workers_semaphore);
 
-        if (!server->is_running)
+        if (!file_server->is_running)
             break;
 
         request_context request;
 
-        if (xQueueReceive(server->requests_queue, &request, portMAX_DELAY))
+        if (xQueueReceive(file_server->requests_queue, &request, portMAX_DELAY))
         {
             request.handler(request.request);
 
@@ -65,28 +65,28 @@ static void request_worker_task(void *argument)
     vTaskDelete(NULL);
 }
 
-static void start_workers(file_server &server)
+static void start_workers(file_server_context &file_server)
 {
-    server.is_running = true;
-    server.workers_semaphore = xSemaphoreCreateCounting(WORKER_COUNT, 0);
-    server.requests_queue = xQueueCreate(WORKER_COUNT, sizeof(request_context));
+    file_server.is_running = true;
+    file_server.workers_semaphore = xSemaphoreCreateCounting(WORKER_COUNT, 0);
+    file_server.requests_queue = xQueueCreate(WORKER_COUNT, sizeof(request_context));
 
     for (size_t i = 0; i < WORKER_COUNT; i++)
         xTaskCreatePinnedToCore(request_worker_task, "request_worker",
                                 WORKER_STACK_SIZE,
-                                &server,
+                                &file_server,
                                 SERVER_PRIORITY,
-                                &server.workers[i],
+                                &file_server.workers[i],
                                 SERVER_CORE_ID);
 }
 
-static void stop_workers(file_server &server)
+static void stop_workers(file_server_context &file_server)
 {
-    server.is_running = false;
+    file_server.is_running = false;
 
     request_context request;
 
-    while (xQueueReceive(server.requests_queue, &request, pdMS_TO_TICKS(100)))
+    while (xQueueReceive(file_server.requests_queue, &request, pdMS_TO_TICKS(100)))
         httpd_req_async_handler_complete(request.request);
 
     for (size_t i = 0; i < WORKER_COUNT; i++)
@@ -97,30 +97,30 @@ static void stop_workers(file_server &server)
             { return ESP_OK; },
         };
 
-        xQueueSend(server.requests_queue, &request, 0);
+        xQueueSend(file_server.requests_queue, &request, 0);
     }
 
-    while (uxSemaphoreGetCount(server.workers_semaphore) != WORKER_COUNT)
+    while (uxSemaphoreGetCount(file_server.workers_semaphore) != WORKER_COUNT)
         vTaskDelay(pdMS_TO_TICKS(100));
 
-    vQueueDelete(server.requests_queue);
-    vSemaphoreDelete(server.workers_semaphore);
+    vQueueDelete(file_server.requests_queue);
+    vSemaphoreDelete(file_server.workers_semaphore);
 }
 
-static bool is_on_worker(const file_server &server)
+static bool is_on_worker(const file_server_context &file_server)
 {
     TaskHandle_t current = xTaskGetCurrentTaskHandle();
 
     for (size_t i = 0; i < WORKER_COUNT; i++)
-        if (current == server.workers[i])
+        if (current == file_server.workers[i])
             return true;
 
     return false;
 }
 
-static esp_err_t submit_work(const file_server &server, httpd_req_t *request, request_handler handler)
+static esp_err_t submit_work(const file_server_context &file_server, httpd_req_t *request, request_handler handler)
 {
-    xSemaphoreTake(server.workers_semaphore, portMAX_DELAY);
+    xSemaphoreTake(file_server.workers_semaphore, portMAX_DELAY);
 
     request_context request_ctx = {
         .request = nullptr,
@@ -130,7 +130,7 @@ static esp_err_t submit_work(const file_server &server, httpd_req_t *request, re
     if (auto error = httpd_req_async_handler_begin(request, &request_ctx.request) != ESP_OK)
         return error;
 
-    xQueueSend(server.requests_queue, &request_ctx, portMAX_DELAY);
+    xQueueSend(file_server.requests_queue, &request_ctx, portMAX_DELAY);
 
     return ESP_OK;
 }
@@ -206,15 +206,15 @@ static esp_err_t add_content_type(httpd_req_t *request, const char *file_path)
 
 static esp_err_t get_handler(httpd_req_t *request)
 {
-    const auto server = static_cast<file_server *>(request->user_ctx);
+    const auto file_server = static_cast<file_server_context *>(request->user_ctx);
 
-    if (!is_on_worker(*server))
-        return submit_work(*server, request, get_handler);
+    if (!is_on_worker(*file_server))
+        return submit_work(*file_server, request, get_handler);
 
-    const auto base_path_length = server->base_path.size();
+    const auto base_path_length = file_server->base_path.size();
     char file_path[CONFIG_LITTLEFS_OBJ_NAME_LEN] = {0};
 
-    file_path_from_uri(request->uri, server->base_path.c_str(), file_path, sizeof(file_path));
+    file_path_from_uri(request->uri, file_server->base_path.c_str(), file_path, sizeof(file_path));
 
     if (!*file_path)
     {
@@ -336,7 +336,7 @@ static esp_err_t ws_handler(httpd_req_t *request)
 
 server::server(const uint16_t port, const std::string &base_path) : mp_implementation(std::make_unique<server_implementation>())
 {
-    mp_implementation->file_server_ctx.base_path = base_path;
+    mp_implementation->file_server.base_path = base_path;
 
     httpd_config_t httpd_config = HTTPD_DEFAULT_CONFIG();
 
@@ -346,21 +346,21 @@ server::server(const uint16_t port, const std::string &base_path) : mp_implement
     httpd_config.max_open_sockets = 11;
     httpd_config.uri_match_fn = httpd_uri_match_wildcard;
 
-    ESP_ERROR_CHECK(httpd_start(&mp_implementation->file_server_ctx.httpd_handle, &httpd_config));
+    ESP_ERROR_CHECK(httpd_start(&mp_implementation->file_server.httpd_handle, &httpd_config));
 
-    start_workers(mp_implementation->file_server_ctx);
+    start_workers(mp_implementation->file_server);
 
     const httpd_uri_t get = {
         .uri = "/*",
         .method = HTTP_GET,
         .handler = get_handler,
-        .user_ctx = &mp_implementation.get()->file_server_ctx,
+        .user_ctx = &mp_implementation.get()->file_server,
         .is_websocket = false,
         .handle_ws_control_frames = false,
         .supported_subprotocol = nullptr,
     };
 
-    ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->file_server_ctx.httpd_handle, &get));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->file_server.httpd_handle, &get));
 
     httpd_config_t httpd_ws_config = HTTPD_DEFAULT_CONFIG();
 
@@ -370,26 +370,26 @@ server::server(const uint16_t port, const std::string &base_path) : mp_implement
     httpd_ws_config.ctrl_port = httpd_config.ctrl_port + 1;
     httpd_ws_config.max_open_sockets = 5;
 
-    ESP_ERROR_CHECK(httpd_start(&mp_implementation->websocket_server_ctx.httpd_handle, &httpd_ws_config));
+    ESP_ERROR_CHECK(httpd_start(&mp_implementation->websocket_server.httpd_handle, &httpd_ws_config));
 
     const httpd_uri_t ws_get = {
         .uri = "/",
         .method = HTTP_GET,
         .handler = ws_handler,
-        .user_ctx = &mp_implementation.get()->websocket_server_ctx,
+        .user_ctx = &mp_implementation.get()->websocket_server,
         .is_websocket = true,
         .handle_ws_control_frames = false,
         .supported_subprotocol = nullptr,
     };
 
-    ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->websocket_server_ctx.httpd_handle, &ws_get));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->websocket_server.httpd_handle, &ws_get));
 }
 
 server::~server()
 {
-    ESP_ERROR_CHECK(httpd_stop(mp_implementation->websocket_server_ctx.httpd_handle));
+    ESP_ERROR_CHECK(httpd_stop(mp_implementation->websocket_server.httpd_handle));
 
-    stop_workers(mp_implementation->file_server_ctx);
+    stop_workers(mp_implementation->file_server);
 
-    ESP_ERROR_CHECK(httpd_stop(mp_implementation->file_server_ctx.httpd_handle));
+    ESP_ERROR_CHECK(httpd_stop(mp_implementation->file_server.httpd_handle));
 }
