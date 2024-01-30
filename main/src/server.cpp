@@ -45,7 +45,7 @@ static void request_worker_task(void *argument)
 {
     const auto file_server = static_cast<file_server_context *>(argument);
 
-    while (file_server->is_running)
+    while (true)
     {
         xSemaphoreGive(file_server->workers_semaphore);
 
@@ -97,7 +97,7 @@ static void stop_workers(file_server_context &file_server)
             { return ESP_OK; },
         };
 
-        xQueueSend(file_server.requests_queue, &request, 0);
+        xQueueSend(file_server.requests_queue, &request, portMAX_DELAY);
     }
 
     while (uxSemaphoreGetCount(file_server.workers_semaphore) != WORKER_COUNT)
@@ -209,7 +209,12 @@ static esp_err_t get_handler(httpd_req_t *request)
     const auto file_server = static_cast<file_server_context *>(request->user_ctx);
 
     if (!is_on_worker(*file_server))
-        return submit_work(*file_server, request, get_handler);
+    {
+        if (file_server->is_running)
+            return submit_work(*file_server, request, get_handler);
+        else
+            return ESP_FAIL;
+    }
 
     const auto base_path_length = file_server->base_path.size();
     char file_path[CONFIG_LITTLEFS_OBJ_NAME_LEN] = {0};
