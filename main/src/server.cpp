@@ -7,11 +7,27 @@
 #include <esp_http_server.h>
 
 constexpr const char *TAG = "server";
+constexpr const UBaseType_t SERVER_CORE_ID = 1U;
+constexpr const UBaseType_t SERVER_PRIORITY = 5U;
+constexpr const UBaseType_t WORKER_COUNT = 4U;
+constexpr const uint32_t WORKER_STACK_SIZE = 4U * 1024U;
+
+typedef esp_err_t (*request_handler)(httpd_req_t *);
+
+struct request_context
+{
+    httpd_req_t *request;
+    request_handler handler;
+};
 
 struct file_server
 {
     httpd_handle_t httpd_handle;
+    SemaphoreHandle_t workers_semaphore;
+    QueueHandle_t requests_queue;
+    TaskHandle_t workers[WORKER_COUNT];
     std::string base_path;
+    bool is_running;
 };
 
 struct websocket_server
@@ -24,6 +40,100 @@ struct server_implementation
     file_server file_server_ctx;
     websocket_server websocket_server_ctx;
 };
+
+static void request_worker_task(void *argument)
+{
+    const auto server = static_cast<file_server *>(argument);
+
+    while (server->is_running)
+    {
+        xSemaphoreGive(server->workers_semaphore);
+
+        if (!server->is_running)
+            break;
+
+        request_context request;
+
+        if (xQueueReceive(server->requests_queue, &request, portMAX_DELAY))
+        {
+            request.handler(request.request);
+
+            httpd_req_async_handler_complete(request.request);
+        }
+    }
+
+    vTaskDelete(NULL);
+}
+
+static void start_workers(file_server &server)
+{
+    server.is_running = true;
+    server.workers_semaphore = xSemaphoreCreateCounting(WORKER_COUNT, 0);
+    server.requests_queue = xQueueCreate(WORKER_COUNT, sizeof(request_context));
+
+    for (size_t i = 0; i < WORKER_COUNT; i++)
+        xTaskCreatePinnedToCore(request_worker_task, "request_worker",
+                                WORKER_STACK_SIZE,
+                                &server,
+                                SERVER_PRIORITY,
+                                &server.workers[i],
+                                SERVER_CORE_ID);
+}
+
+static void stop_workers(file_server &server)
+{
+    server.is_running = false;
+
+    request_context request;
+
+    while (xQueueReceive(server.requests_queue, &request, pdMS_TO_TICKS(100)))
+        httpd_req_async_handler_complete(request.request);
+
+    for (size_t i = 0; i < WORKER_COUNT; i++)
+    {
+        request = {
+            .request = nullptr,
+            .handler = [](httpd_req_t *) -> esp_err_t
+            { return ESP_OK; },
+        };
+
+        xQueueSend(server.requests_queue, &request, 0);
+    }
+
+    while (uxSemaphoreGetCount(server.workers_semaphore) != WORKER_COUNT)
+        vTaskDelay(pdMS_TO_TICKS(100));
+
+    vQueueDelete(server.requests_queue);
+    vSemaphoreDelete(server.workers_semaphore);
+}
+
+static bool is_on_worker(const file_server &server)
+{
+    TaskHandle_t current = xTaskGetCurrentTaskHandle();
+
+    for (size_t i = 0; i < WORKER_COUNT; i++)
+        if (current == server.workers[i])
+            return true;
+
+    return false;
+}
+
+static esp_err_t submit_work(const file_server &server, httpd_req_t *request, request_handler handler)
+{
+    xSemaphoreTake(server.workers_semaphore, portMAX_DELAY);
+
+    request_context request_ctx = {
+        .request = nullptr,
+        .handler = handler,
+    };
+
+    if (auto error = httpd_req_async_handler_begin(request, &request_ctx.request) != ESP_OK)
+        return error;
+
+    xQueueSend(server.requests_queue, &request_ctx, portMAX_DELAY);
+
+    return ESP_OK;
+}
 
 static void file_path_from_uri(const char *uri, const char *base_path, char *file_path, const size_t file_path_max)
 {
@@ -45,6 +155,15 @@ static void file_path_from_uri(const char *uri, const char *base_path, char *fil
 
     strcpy(file_path, base_path);
     strcat(file_path + base_path_length, uri);
+}
+
+static esp_err_t get_index_handler(httpd_req_t *request)
+{
+    httpd_resp_set_status(request, "307 Temporary Redirect");
+    httpd_resp_set_hdr(request, "Location", "/");
+    httpd_resp_send(request, NULL, 0);
+
+    return ESP_OK;
 }
 
 static esp_err_t add_content_type(httpd_req_t *request, const char *file_path)
@@ -85,22 +204,17 @@ static esp_err_t add_content_type(httpd_req_t *request, const char *file_path)
     return httpd_resp_set_type(request, content_type);
 }
 
-static esp_err_t get_index_handler(httpd_req_t *request)
-{
-    httpd_resp_set_status(request, "307 Temporary Redirect");
-    httpd_resp_set_hdr(request, "Location", "/");
-    httpd_resp_send(request, NULL, 0);
-
-    return ESP_OK;
-}
-
 static esp_err_t get_handler(httpd_req_t *request)
 {
-    const auto server_impl = static_cast<file_server *>(request->user_ctx);
-    const auto base_path_length = server_impl->base_path.size();
+    const auto server = static_cast<file_server *>(request->user_ctx);
+
+    if (!is_on_worker(*server))
+        return submit_work(*server, request, get_handler);
+
+    const auto base_path_length = server->base_path.size();
     char file_path[CONFIG_LITTLEFS_OBJ_NAME_LEN] = {0};
 
-    file_path_from_uri(request->uri, server_impl->base_path.c_str(), file_path, sizeof(file_path));
+    file_path_from_uri(request->uri, server->base_path.c_str(), file_path, sizeof(file_path));
 
     if (!*file_path)
     {
@@ -129,6 +243,8 @@ static esp_err_t get_handler(httpd_req_t *request)
         }
     }
 
+    ESP_LOGI(TAG, "sending: %s", file_path);
+
     FILE *file = fopen(file_path, "r");
 
     if (!file)
@@ -141,28 +257,32 @@ static esp_err_t get_handler(httpd_req_t *request)
     if (add_content_type(request, file_path) != ESP_OK)
         return ESP_FAIL;
 
-    uint8_t buffer[1024U];
-    size_t read_bytes = 0;
-
-    do
     {
-        read_bytes = fread(buffer, 1, sizeof(buffer), file);
+        uint8_t buffer[1024U];
+        size_t read_bytes = 0;
 
-        if (read_bytes > 0)
-            if (httpd_resp_send_chunk(request, reinterpret_cast<char *>(buffer), read_bytes) != ESP_OK)
-            {
-                fclose(file);
+        do
+        {
+            read_bytes = fread(buffer, 1, sizeof(buffer), file);
 
-                httpd_resp_send_chunk(request, NULL, 0);
-                httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+            if (read_bytes > 0)
+                if (httpd_resp_send_chunk(request, reinterpret_cast<char *>(buffer), read_bytes) != ESP_OK)
+                {
+                    fclose(file);
 
-                return ESP_FAIL;
-            }
-    } while (read_bytes);
+                    httpd_resp_send_chunk(request, NULL, 0);
+                    httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+
+                    return ESP_FAIL;
+                }
+        } while (read_bytes);
+    }
 
     fclose(file);
 
     httpd_resp_send_chunk(request, NULL, 0);
+
+    ESP_LOGI(TAG, "sent: %s", file_path);
 
     return ESP_OK;
 }
@@ -220,11 +340,15 @@ server::server(const uint16_t port, const std::string &base_path) : mp_implement
 
     httpd_config_t httpd_config = HTTPD_DEFAULT_CONFIG();
 
-    httpd_config.core_id = 1;
+    httpd_config.task_priority = SERVER_PRIORITY;
+    httpd_config.core_id = SERVER_CORE_ID;
     httpd_config.server_port = port;
+    httpd_config.max_open_sockets = 11;
     httpd_config.uri_match_fn = httpd_uri_match_wildcard;
 
     ESP_ERROR_CHECK(httpd_start(&mp_implementation->file_server_ctx.httpd_handle, &httpd_config));
+
+    start_workers(mp_implementation->file_server_ctx);
 
     const httpd_uri_t get = {
         .uri = "/*",
@@ -240,9 +364,11 @@ server::server(const uint16_t port, const std::string &base_path) : mp_implement
 
     httpd_config_t httpd_ws_config = HTTPD_DEFAULT_CONFIG();
 
-    httpd_ws_config.core_id = 1;
+    httpd_ws_config.task_priority = SERVER_PRIORITY;
+    httpd_ws_config.core_id = SERVER_CORE_ID;
     httpd_ws_config.server_port = httpd_config.server_port + 1;
     httpd_ws_config.ctrl_port = httpd_config.ctrl_port + 1;
+    httpd_ws_config.max_open_sockets = 5;
 
     ESP_ERROR_CHECK(httpd_start(&mp_implementation->websocket_server_ctx.httpd_handle, &httpd_ws_config));
 
@@ -262,5 +388,8 @@ server::server(const uint16_t port, const std::string &base_path) : mp_implement
 server::~server()
 {
     ESP_ERROR_CHECK(httpd_stop(mp_implementation->websocket_server_ctx.httpd_handle));
-    ESP_ERROR_CHECK(httpd_stop(mp_implementation->websocket_server_ctx.httpd_handle));
+
+    stop_workers(mp_implementation->file_server_ctx);
+
+    ESP_ERROR_CHECK(httpd_stop(mp_implementation->file_server_ctx.httpd_handle));
 }
