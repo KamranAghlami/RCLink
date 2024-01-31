@@ -1,5 +1,7 @@
 #include "server.h"
 
+#include <vector>
+
 #include <sys/stat.h>
 
 #include <esp_err.h>
@@ -12,7 +14,7 @@ constexpr const UBaseType_t SERVER_PRIORITY = 5U;
 constexpr const UBaseType_t WORKER_COUNT = 4U;
 constexpr const uint32_t WORKER_STACK_SIZE = 4U * 1024U;
 
-typedef esp_err_t (*request_handler)(httpd_req_t *);
+using request_handler = esp_err_t (*)(httpd_req_t *);
 
 struct request_context
 {
@@ -33,6 +35,9 @@ struct file_server_context
 struct websocket_server_context
 {
     httpd_handle_t httpd_handle;
+    std::vector<uint8_t> receive_buffer;
+    std::vector<uint8_t> transmit_buffer;
+    data_stream *stream;
 };
 
 struct server_implementation
@@ -380,4 +385,9 @@ server::~server()
     stop_workers(mp_implementation->file_server);
 
     ESP_ERROR_CHECK(httpd_stop(mp_implementation->file_server.httpd_handle));
+}
+
+void server::set_data_stream(data_stream &stream)
+{
+    mp_implementation->websocket_server.stream = &stream;
 }
