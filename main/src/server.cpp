@@ -13,6 +13,7 @@ constexpr const UBaseType_t SERVER_CORE_ID = 1U;
 constexpr const UBaseType_t SERVER_PRIORITY = 5U;
 constexpr const UBaseType_t WORKER_COUNT = 4U;
 constexpr const uint32_t WORKER_STACK_SIZE = 4U * 1024U;
+constexpr const size_t WS_BUFFER_SIZE = 16U * 1024U;
 
 using request_handler = esp_err_t (*)(httpd_req_t *);
 
@@ -364,6 +365,9 @@ server::server(const uint16_t port, const std::string &base_path) : mp_implement
     httpd_ws_config.max_open_sockets = 5;
 
     ESP_ERROR_CHECK(httpd_start(&mp_implementation->websocket_server.httpd_handle, &httpd_ws_config));
+
+    mp_implementation->websocket_server.receive_buffer.reserve(WS_BUFFER_SIZE);
+    mp_implementation->websocket_server.transmit_buffer.reserve(WS_BUFFER_SIZE);
 
     const httpd_uri_t ws_get = {
         .uri = "/",
