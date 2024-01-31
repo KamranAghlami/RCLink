@@ -235,8 +235,6 @@ static esp_err_t get_handler(httpd_req_t *request)
         }
     }
 
-    ESP_LOGI(TAG, "sending: %s", file_path);
-
     FILE *file = fopen(file_path, "r");
 
     if (!file)
@@ -273,8 +271,6 @@ static esp_err_t get_handler(httpd_req_t *request)
     fclose(file);
 
     httpd_resp_send_chunk(request, nullptr, 0);
-
-    ESP_LOGI(TAG, "sent: %s", file_path);
 
     return ESP_OK;
 }
