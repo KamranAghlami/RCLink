@@ -1,6 +1,4 @@
-#include "server.h"
-
-#include <vector>
+#include "file_server.h"
 
 #include <sys/stat.h>
 
@@ -11,9 +9,18 @@
 constexpr const char *TAG = "server";
 constexpr const UBaseType_t SERVER_CORE_ID = 1U;
 constexpr const UBaseType_t SERVER_PRIORITY = 5U;
-constexpr const UBaseType_t WORKER_COUNT = 5U;
+constexpr const UBaseType_t WORKER_COUNT = 4U;
 constexpr const uint32_t WORKER_STACK_SIZE = 4U * 1024U;
-constexpr const size_t WS_BUFFER_SIZE = 16U * 1024U;
+
+struct file_server_implementation
+{
+    SemaphoreHandle_t workers_semaphore;
+    QueueHandle_t requests_queue;
+    TaskHandle_t workers[WORKER_COUNT];
+    bool is_running;
+    httpd_handle_t httpd_handle;
+    std::string base_path;
+};
 
 using request_handler = esp_err_t (*)(httpd_req_t *);
 
@@ -23,33 +30,9 @@ struct request_context
     request_handler handler;
 };
 
-struct file_server_context
-{
-    httpd_handle_t httpd_handle;
-    std::string base_path;
-};
-
-struct websocket_server_context
-{
-    httpd_handle_t httpd_handle;
-    std::vector<uint8_t> receive_buffer;
-    std::vector<uint8_t> transmit_buffer;
-    data_stream *stream;
-};
-
-struct server_implementation
-{
-    SemaphoreHandle_t workers_semaphore;
-    QueueHandle_t requests_queue;
-    TaskHandle_t workers[WORKER_COUNT];
-    bool is_running;
-    file_server_context file_server;
-    websocket_server_context websocket_server;
-};
-
 static void request_worker_task(void *argument)
 {
-    const auto server_impl = static_cast<server_implementation *>(argument);
+    const auto server_impl = static_cast<file_server_implementation *>(argument);
 
     while (true)
     {
@@ -66,7 +49,7 @@ static void request_worker_task(void *argument)
     }
 }
 
-static void start_workers(server_implementation &server_impl)
+static void start_workers(file_server_implementation &server_impl)
 {
     server_impl.is_running = true;
     server_impl.workers_semaphore = xSemaphoreCreateCounting(WORKER_COUNT, 0);
@@ -81,7 +64,7 @@ static void start_workers(server_implementation &server_impl)
                                 SERVER_CORE_ID);
 }
 
-static void stop_workers(server_implementation &server_impl)
+static void stop_workers(file_server_implementation &server_impl)
 {
     server_impl.is_running = false;
 
@@ -100,7 +83,7 @@ static void stop_workers(server_implementation &server_impl)
     vSemaphoreDelete(server_impl.workers_semaphore);
 }
 
-static bool is_on_worker(const server_implementation &server_impl)
+static bool is_on_worker(const file_server_implementation &server_impl)
 {
     TaskHandle_t current = xTaskGetCurrentTaskHandle();
 
@@ -111,7 +94,7 @@ static bool is_on_worker(const server_implementation &server_impl)
     return false;
 }
 
-static esp_err_t submit_work(const server_implementation &server_impl, httpd_req_t *request, request_handler handler)
+static esp_err_t submit_work(const file_server_implementation &server_impl, httpd_req_t *request, request_handler handler)
 {
     xSemaphoreTake(server_impl.workers_semaphore, portMAX_DELAY);
 
@@ -197,22 +180,22 @@ static esp_err_t add_content_type(httpd_req_t *request, const char *file_path)
     return httpd_resp_set_type(request, content_type);
 }
 
-static esp_err_t get_handler(httpd_req_t *request)
+static esp_err_t handler(httpd_req_t *request)
 {
-    const auto server_impl = static_cast<server_implementation *>(request->user_ctx);
+    const auto server_impl = static_cast<file_server_implementation *>(request->user_ctx);
 
     if (!is_on_worker(*server_impl))
     {
         if (server_impl->is_running)
-            return submit_work(*server_impl, request, get_handler);
+            return submit_work(*server_impl, request, handler);
         else
             return ESP_FAIL;
     }
 
-    const auto base_path_length = server_impl->file_server.base_path.size();
+    const auto base_path_length = server_impl->base_path.size();
     char file_path[CONFIG_LITTLEFS_OBJ_NAME_LEN] = {0};
 
-    file_path_from_uri(request->uri, server_impl->file_server.base_path.c_str(), file_path, sizeof(file_path));
+    file_path_from_uri(request->uri, server_impl->base_path.c_str(), file_path, sizeof(file_path));
 
     if (!*file_path)
     {
@@ -281,128 +264,39 @@ static esp_err_t get_handler(httpd_req_t *request)
     return ESP_OK;
 }
 
-static esp_err_t ws_handler(httpd_req_t *request)
-{
-    ESP_LOGW(TAG, "ws_handler");
-
-    // const auto server_impl = static_cast<server_implementation *>(request->user_ctx);
-
-    // if (!is_on_worker(*server_impl))
-    // {
-    //     if (server_impl->is_running)
-    //         return submit_work(*server_impl, request, get_handler);
-    //     else
-    //         return ESP_FAIL;
-    // }
-
-    if (request->method == HTTP_GET)
-        return ESP_OK;
-
-    httpd_ws_frame_t ws_frame = {};
-
-    if (httpd_ws_recv_frame(request, &ws_frame, 0) != ESP_OK)
-        return ESP_FAIL;
-
-    uint8_t buffer[8] = {0};
-
-    if (ws_frame.len)
-    {
-        if (ws_frame.len + 1 > sizeof(buffer))
-            return ESP_FAIL;
-
-        ws_frame.payload = buffer;
-
-        if (httpd_ws_recv_frame(request, &ws_frame, ws_frame.len) != ESP_OK)
-            return ESP_FAIL;
-
-        ESP_LOGI(TAG, "new frame! type: %d, size: %zu, value: %02x %02x %02x %02x",
-                 ws_frame.type, ws_frame.len, ws_frame.payload[0], ws_frame.payload[1], ws_frame.payload[2], ws_frame.payload[3]);
-    }
-
-    if (buffer[0] == '\x0d')
-    {
-        buffer[0] = '\x0a';
-        buffer[1] = '\x0d';
-        ws_frame.len = 2;
-    }
-
-    if (buffer[0] == '\x7f')
-    {
-        buffer[0] = '\x08';
-        buffer[1] = ' ';
-        buffer[2] = '\x08';
-        ws_frame.len = 3;
-    }
-
-    if (httpd_ws_send_frame(request, &ws_frame) != ESP_OK)
-        return ESP_FAIL;
-
-    return ESP_OK;
-}
-
-server::server(const uint16_t port, const std::string &base_path) : mp_implementation(std::make_unique<server_implementation>())
+file_server::file_server(const uint16_t port, const std::string &base_path) : mp_implementation(std::make_unique<file_server_implementation>())
 {
     start_workers(*mp_implementation);
 
-    mp_implementation->file_server.base_path = base_path;
+    mp_implementation->base_path = base_path;
 
-    httpd_config_t file_server_config = HTTPD_DEFAULT_CONFIG();
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 
-    file_server_config.task_priority = SERVER_PRIORITY;
-    file_server_config.core_id = SERVER_CORE_ID;
-    file_server_config.server_port = port;
-    file_server_config.max_open_sockets = std::min((2U * WORKER_COUNT) + 1U, 11U);
-    file_server_config.uri_match_fn = httpd_uri_match_wildcard;
+    config.task_priority = SERVER_PRIORITY;
+    config.core_id = SERVER_CORE_ID;
+    config.server_port = port;
+    config.ctrl_port += port;
+    config.max_open_sockets = std::min((2U * WORKER_COUNT) + 3U, 11U);
+    config.uri_match_fn = httpd_uri_match_wildcard;
 
-    ESP_ERROR_CHECK(httpd_start(&mp_implementation->file_server.httpd_handle, &file_server_config));
+    ESP_ERROR_CHECK(httpd_start(&mp_implementation->httpd_handle, &config));
 
     const httpd_uri_t get = {
         .uri = "/*",
         .method = HTTP_GET,
-        .handler = get_handler,
+        .handler = handler,
         .user_ctx = mp_implementation.get(),
         .is_websocket = false,
         .handle_ws_control_frames = false,
         .supported_subprotocol = nullptr,
     };
 
-    ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->file_server.httpd_handle, &get));
-
-    httpd_config_t websocket_server_config = HTTPD_DEFAULT_CONFIG();
-
-    websocket_server_config.task_priority = SERVER_PRIORITY;
-    websocket_server_config.core_id = SERVER_CORE_ID;
-    websocket_server_config.server_port = file_server_config.server_port + 1;
-    websocket_server_config.ctrl_port = file_server_config.ctrl_port + 1;
-    websocket_server_config.max_open_sockets = std::min((WORKER_COUNT / 2U) + 3U, 5U);
-
-    ESP_ERROR_CHECK(httpd_start(&mp_implementation->websocket_server.httpd_handle, &websocket_server_config));
-
-    mp_implementation->websocket_server.receive_buffer.reserve(WS_BUFFER_SIZE);
-    mp_implementation->websocket_server.transmit_buffer.reserve(WS_BUFFER_SIZE);
-
-    const httpd_uri_t ws_get = {
-        .uri = "/",
-        .method = HTTP_GET,
-        .handler = ws_handler,
-        .user_ctx = mp_implementation.get(),
-        .is_websocket = true,
-        .handle_ws_control_frames = false,
-        .supported_subprotocol = nullptr,
-    };
-
-    ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->websocket_server.httpd_handle, &ws_get));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->httpd_handle, &get));
 }
 
-server::~server()
+file_server::~file_server()
 {
     stop_workers(*mp_implementation);
 
-    ESP_ERROR_CHECK(httpd_stop(mp_implementation->websocket_server.httpd_handle));
-    ESP_ERROR_CHECK(httpd_stop(mp_implementation->file_server.httpd_handle));
-}
-
-void server::set_data_stream(data_stream &stream)
-{
-    mp_implementation->websocket_server.stream = &stream;
+    ESP_ERROR_CHECK(httpd_stop(mp_implementation->httpd_handle));
 }

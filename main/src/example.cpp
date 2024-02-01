@@ -8,7 +8,8 @@
 
 #include "hardware/display.h"
 #include "hardware/battery.h"
-#include "server.h"
+#include "server/file_server.h"
+#include "server/websocket_server.h"
 
 constexpr size_t initial_balls = 25;
 
@@ -32,7 +33,8 @@ struct ball
 class example : public application
 {
 public:
-    example() : mp_server(nullptr),
+    example() : mp_file_server(nullptr),
+                mp_websocket_server(nullptr),
                 m_width(hardware::display::get().width()),
                 m_height(hardware::display::get().height()),
                 m_group(lv_group_create()),
@@ -217,14 +219,27 @@ private:
         lv_label_set_text_fmt(m_battery_voltage, "Battery: %lumv", m_voltage_level);
         lv_label_set_text_fmt(m_ball_count, "Balls: %zu", m_balls.size());
 
-        if (m_balls.size() > 20 && !mp_server)
-            mp_server = std::make_unique<server>(80, LV_FS_POSIX_PATH "/web");
-        else if (m_balls.size() < 5 && mp_server)
-            mp_server.reset();
+        if (m_balls.size() > 20)
+        {
+            if (!mp_file_server)
+                mp_file_server = std::make_unique<file_server>(80, LV_FS_POSIX_PATH "/web");
+
+            if (!mp_websocket_server)
+                mp_websocket_server = std::make_unique<websocket_server>(81);
+        }
+        else if (m_balls.size() < 5)
+        {
+            if (mp_file_server)
+                mp_file_server.reset();
+
+            if (mp_websocket_server)
+                mp_websocket_server.reset();
+        }
     }
 
     sol::state m_sol_state;
-    std::unique_ptr<server> mp_server;
+    std::unique_ptr<file_server> mp_file_server;
+    std::unique_ptr<websocket_server> mp_websocket_server;
 
     const uint16_t m_width;
     const uint16_t m_height;
