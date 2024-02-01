@@ -1,18 +1,17 @@
 #include "websocket_server.h"
 
 #include <vector>
+#include <cstring>
 
 #include <esp_err.h>
 #include <esp_log.h>
 #include <esp_http_server.h>
 
-#include <tlvcpp/utilities/hexdump.h>
-
 constexpr const char *TAG = "websocket_server";
 constexpr const UBaseType_t SERVER_CORE_ID = 1U;
 constexpr const UBaseType_t SERVER_PRIORITY = 5U;
 constexpr const size_t WS_BUFFER_SIZE = 16U * 1024U;
-constexpr const size_t CLIENTS_MAX = 2;
+constexpr const size_t WS_SEND_CHUNK_SIZE = 1024U;
 
 struct websocket_server_implementation
 {
@@ -20,31 +19,48 @@ struct websocket_server_implementation
     int socket_descriptor = -1;
     std::vector<uint8_t> receive_buffer;
     std::vector<uint8_t> transmit_buffer;
+    bool transmitting;
     data_stream *stream;
 };
+
+static void shift_left(std::vector<uint8_t> &buffer, size_t amount)
+{
+    const size_t new_size = buffer.size() - amount;
+
+    std::memmove(buffer.data(), buffer.data() + amount, new_size);
+    buffer.resize(new_size);
+}
 
 static void send_async(void *arg)
 {
     auto server_impl = static_cast<websocket_server_implementation *>(arg);
 
-    httpd_ws_frame_t ws_frame = {};
-
-    ws_frame.type = HTTPD_WS_TYPE_BINARY;
-    ws_frame.payload = server_impl->transmit_buffer.data();
-    ws_frame.len = server_impl->transmit_buffer.size();
+    httpd_ws_frame_t ws_frame = {
+        .final = server_impl->transmit_buffer.size() <= WS_SEND_CHUNK_SIZE,
+        .fragmented = !ws_frame.final || server_impl->transmitting,
+        .type = server_impl->transmitting ? HTTPD_WS_TYPE_CONTINUE : HTTPD_WS_TYPE_BINARY,
+        .payload = server_impl->transmit_buffer.data(),
+        .len = std::min(WS_SEND_CHUNK_SIZE, server_impl->transmit_buffer.size()),
+    };
 
     httpd_ws_send_frame_async(server_impl->handle, server_impl->socket_descriptor, &ws_frame);
 
-    ESP_LOGI(TAG, "sent:");
-    tlvcpp::hexdump(ws_frame.payload, ws_frame.len);
+    server_impl->transmitting = !ws_frame.final;
 
-    server_impl->transmit_buffer.resize(0);
+    if (server_impl->transmitting)
+    {
+        shift_left(server_impl->transmit_buffer, WS_SEND_CHUNK_SIZE);
+
+        httpd_queue_work(server_impl->handle, send_async, server_impl);
+    }
+    else
+        server_impl->transmit_buffer.resize(0);
 }
 
 static void switch_client(websocket_server_implementation &server_impl)
 {
-    int client_descriptors[CLIENTS_MAX];
-    size_t client_descriptors_size = CLIENTS_MAX;
+    int client_descriptors[5];
+    size_t client_descriptors_size = 5;
 
     if (httpd_get_client_list(server_impl.handle, &client_descriptors_size, client_descriptors) != ESP_OK)
         return;
@@ -52,6 +68,7 @@ static void switch_client(websocket_server_implementation &server_impl)
     server_impl.socket_descriptor = client_descriptors[client_descriptors_size - 1];
     server_impl.receive_buffer.resize(0);
     server_impl.transmit_buffer.resize(0);
+    server_impl.transmitting = false;
 
     for (size_t i = 0; i < client_descriptors_size - 1; i++)
         httpd_sess_trigger_close(server_impl.handle, client_descriptors[i]);
@@ -86,9 +103,6 @@ static esp_err_t handler(httpd_req_t *request)
         if (httpd_ws_recv_frame(request, &ws_frame, ws_frame.len) != ESP_OK)
             return ESP_FAIL;
     }
-
-    ESP_LOGI(TAG, "received:");
-    tlvcpp::hexdump(ws_frame.payload, ws_frame.len);
 
     for (const auto byte : server_impl->receive_buffer)
         switch (byte)
