@@ -5,3 +5,5 @@ dependencies:
     git: https://github.com/KamranAghlami/idf_component_t_display_s3.git
   lua:
     git: https://github.com/KamranAghlami/idf_component_lua.git
+  libtlvcpp:
+    git: https://github.com/KamranAghlami/libtlvcpp.git

@@ -6,6 +6,8 @@
 #include <esp_log.h>
 #include <esp_http_server.h>
 
+#include <tlvcpp/utilities/hexdump.h>
+
 constexpr const char *TAG = "websocket_server";
 constexpr const UBaseType_t SERVER_CORE_ID = 1U;
 constexpr const UBaseType_t SERVER_PRIORITY = 5U;
@@ -25,13 +27,16 @@ static void send_async(void *arg)
 {
     auto server_impl = static_cast<websocket_server_implementation *>(arg);
 
-    httpd_ws_frame_t ws_pkt = {};
+    httpd_ws_frame_t ws_frame = {};
 
-    ws_pkt.type = HTTPD_WS_TYPE_BINARY;
-    ws_pkt.payload = server_impl->transmit_buffer.data();
-    ws_pkt.len = server_impl->transmit_buffer.size();
+    ws_frame.type = HTTPD_WS_TYPE_BINARY;
+    ws_frame.payload = server_impl->transmit_buffer.data();
+    ws_frame.len = server_impl->transmit_buffer.size();
 
-    httpd_ws_send_frame_async(server_impl->handle, server_impl->socket_descriptor, &ws_pkt);
+    httpd_ws_send_frame_async(server_impl->handle, server_impl->socket_descriptor, &ws_frame);
+
+    ESP_LOGI(TAG, "sent:");
+    tlvcpp::hexdump(ws_frame.payload, ws_frame.len);
 
     server_impl->transmit_buffer.resize(0);
 }
@@ -81,6 +86,9 @@ static esp_err_t handler(httpd_req_t *request)
         if (httpd_ws_recv_frame(request, &ws_frame, ws_frame.len) != ESP_OK)
             return ESP_FAIL;
     }
+
+    ESP_LOGI(TAG, "received:");
+    tlvcpp::hexdump(ws_frame.payload, ws_frame.len);
 
     for (const auto byte : server_impl->receive_buffer)
         switch (byte)
