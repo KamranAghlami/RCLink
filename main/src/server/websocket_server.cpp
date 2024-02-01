@@ -68,38 +68,42 @@ static esp_err_t handler(httpd_req_t *request)
     if (httpd_ws_recv_frame(request, &ws_frame, 0) != ESP_OK)
         return ESP_FAIL;
 
-    uint8_t buffer[8] = {0};
-
     if (ws_frame.len)
     {
-        if (ws_frame.len + 1 > sizeof(buffer))
+        auto rx_space = server_impl->receive_buffer.capacity() - server_impl->receive_buffer.size();
+
+        if (rx_space < ws_frame.len)
             return ESP_FAIL;
 
-        ws_frame.payload = buffer;
+        ws_frame.payload = server_impl->receive_buffer.data();
+        server_impl->receive_buffer.resize(server_impl->receive_buffer.size() + ws_frame.len);
 
         if (httpd_ws_recv_frame(request, &ws_frame, ws_frame.len) != ESP_OK)
             return ESP_FAIL;
     }
 
-    if (buffer[0] == '\x0d')
-    {
-        buffer[0] = '\x0a';
-        buffer[1] = '\x0d';
-        ws_frame.len = 2;
-    }
+    for (const auto byte : server_impl->receive_buffer)
+        switch (byte)
+        {
+        case '\x0d':
+            server_impl->transmit_buffer.push_back('\x0a');
+            server_impl->transmit_buffer.push_back('\x0d');
+            break;
 
-    if (buffer[0] == '\x7f')
-    {
-        buffer[0] = '\x08';
-        buffer[1] = ' ';
-        buffer[2] = '\x08';
-        ws_frame.len = 3;
-    }
+        case '\x7f':
+            server_impl->transmit_buffer.push_back('\x08');
+            server_impl->transmit_buffer.push_back(' ');
+            server_impl->transmit_buffer.push_back('\x08');
+            break;
 
-    if (httpd_ws_send_frame(request, &ws_frame) != ESP_OK)
-        return ESP_FAIL;
+        default:
+            server_impl->transmit_buffer.push_back(byte);
+            break;
+        }
 
-    return ESP_OK;
+    server_impl->receive_buffer.resize(0);
+
+    return httpd_queue_work(server_impl->handle, send_async, server_impl);
 }
 
 websocket_server::websocket_server(const uint16_t port) : mp_implementation(std::make_unique<websocket_server_implementation>())
