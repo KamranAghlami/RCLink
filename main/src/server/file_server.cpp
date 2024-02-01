@@ -6,7 +6,7 @@
 #include <esp_log.h>
 #include <esp_http_server.h>
 
-constexpr const char *TAG = "server";
+constexpr const char *TAG = "file_server";
 constexpr const UBaseType_t SERVER_CORE_ID = 1U;
 constexpr const UBaseType_t SERVER_PRIORITY = 5U;
 constexpr const UBaseType_t WORKER_COUNT = 4U;
@@ -18,7 +18,7 @@ struct file_server_implementation
     QueueHandle_t requests_queue;
     TaskHandle_t workers[WORKER_COUNT];
     bool is_running;
-    httpd_handle_t httpd_handle;
+    httpd_handle_t handle;
     std::string base_path;
 };
 
@@ -279,7 +279,7 @@ file_server::file_server(const uint16_t port, const std::string &base_path) : mp
     config.max_open_sockets = std::min((2U * WORKER_COUNT) + 3U, 11U);
     config.uri_match_fn = httpd_uri_match_wildcard;
 
-    ESP_ERROR_CHECK(httpd_start(&mp_implementation->httpd_handle, &config));
+    ESP_ERROR_CHECK(httpd_start(&mp_implementation->handle, &config));
 
     const httpd_uri_t get = {
         .uri = "/*",
@@ -291,12 +291,12 @@ file_server::file_server(const uint16_t port, const std::string &base_path) : mp
         .supported_subprotocol = nullptr,
     };
 
-    ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->httpd_handle, &get));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->handle, &get));
 }
 
 file_server::~file_server()
 {
     stop_workers(*mp_implementation);
 
-    ESP_ERROR_CHECK(httpd_stop(mp_implementation->httpd_handle));
+    ESP_ERROR_CHECK(httpd_stop(mp_implementation->handle));
 }
