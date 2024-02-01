@@ -28,6 +28,7 @@ static void shift_left(std::vector<uint8_t> &buffer, size_t amount)
     const size_t new_size = buffer.size() - amount;
 
     std::memmove(buffer.data(), buffer.data() + amount, new_size);
+
     buffer.resize(new_size);
 }
 
@@ -35,17 +36,19 @@ static void send_async(void *arg)
 {
     auto server_impl = static_cast<websocket_server_implementation *>(arg);
 
+    bool final = server_impl->transmit_buffer.size() <= WS_SEND_CHUNK_SIZE;
+
     httpd_ws_frame_t ws_frame = {
-        .final = server_impl->transmit_buffer.size() <= WS_SEND_CHUNK_SIZE,
-        .fragmented = !ws_frame.final || server_impl->transmitting,
+        .final = final,
+        .fragmented = true,
         .type = server_impl->transmitting ? HTTPD_WS_TYPE_CONTINUE : HTTPD_WS_TYPE_BINARY,
         .payload = server_impl->transmit_buffer.data(),
-        .len = std::min(WS_SEND_CHUNK_SIZE, server_impl->transmit_buffer.size()),
+        .len = final ? server_impl->transmit_buffer.size() : WS_SEND_CHUNK_SIZE,
     };
 
     httpd_ws_send_frame_async(server_impl->handle, server_impl->socket_descriptor, &ws_frame);
 
-    server_impl->transmitting = !ws_frame.final;
+    server_impl->transmitting = !final;
 
     if (server_impl->transmitting)
     {
