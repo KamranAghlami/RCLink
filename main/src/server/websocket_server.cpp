@@ -7,33 +7,54 @@
 #include <esp_log.h>
 #include <esp_http_server.h>
 
+#include "lock_guard.h"
+
+using header_type = uint16_t;
+
 constexpr const char *TAG = "websocket_server";
 constexpr const UBaseType_t SERVER_CORE_ID = 1U;
 constexpr const UBaseType_t SERVER_PRIORITY = 5U;
 constexpr const size_t WS_BUFFER_SIZE = 16U * 1024U;
 constexpr const size_t WS_SEND_CHUNK_SIZE = 1024U;
+constexpr const size_t HEADER_SIZE = sizeof(header_type);
 
 struct websocket_server_implementation
 {
     httpd_handle_t handle;
     int socket_descriptor = -1;
+    SemaphoreHandle_t receive_semaphore;
+    SemaphoreHandle_t transmit_semaphore;
     std::vector<uint8_t> receive_buffer;
     std::vector<uint8_t> transmit_buffer;
+    size_t receive_discard;
     bool transmitting;
 };
 
 static void shift_left(std::vector<uint8_t> &buffer, size_t amount)
 {
+    if (!amount)
+        return;
+
     const size_t new_size = buffer.size() - amount;
 
-    std::memmove(buffer.data(), buffer.data() + amount, new_size);
+    if (new_size)
+    {
+        std::memmove(buffer.data(), buffer.data() + amount, new_size);
 
-    buffer.resize(new_size);
+        buffer.resize(new_size);
+    }
+    else
+        buffer.resize(0);
 }
 
 static void send_async(void *arg)
 {
     auto server_impl = static_cast<websocket_server_implementation *>(arg);
+
+    lock_guard guard(server_impl->transmit_semaphore);
+
+    if (server_impl->socket_descriptor == -1)
+        return;
 
     bool final = server_impl->transmit_buffer.size() <= WS_SEND_CHUNK_SIZE;
 
@@ -67,10 +88,16 @@ static void switch_client(websocket_server_implementation &server_impl)
     if (httpd_get_client_list(server_impl.handle, &client_descriptors_size, client_descriptors) != ESP_OK)
         return;
 
-    server_impl.socket_descriptor = client_descriptors[client_descriptors_size - 1];
-    server_impl.receive_buffer.resize(0);
-    server_impl.transmit_buffer.resize(0);
-    server_impl.transmitting = false;
+    {
+        lock_guard rx_guard(server_impl.receive_semaphore);
+        lock_guard tx_guard(server_impl.transmit_semaphore);
+
+        server_impl.socket_descriptor = client_descriptors[client_descriptors_size - 1];
+        server_impl.receive_buffer.resize(0);
+        server_impl.transmit_buffer.resize(0);
+        server_impl.receive_discard = 0;
+        server_impl.transmitting = false;
+    }
 
     for (size_t i = 0; i < client_descriptors_size - 1; i++)
         httpd_sess_trigger_close(server_impl.handle, client_descriptors[i]);
@@ -87,23 +114,30 @@ static esp_err_t handler(httpd_req_t *request)
         return ESP_OK;
     }
 
-    httpd_ws_frame_t ws_frame = {};
-
-    if (httpd_ws_recv_frame(request, &ws_frame, 0) != ESP_OK)
-        return ESP_FAIL;
-
-    if (ws_frame.len)
     {
-        auto rx_space = server_impl->receive_buffer.capacity() - server_impl->receive_buffer.size();
+        lock_guard guard(server_impl->receive_semaphore);
 
-        if (rx_space < ws_frame.len)
+        if (server_impl->socket_descriptor == -1)
             return ESP_FAIL;
 
-        ws_frame.payload = server_impl->receive_buffer.data();
-        server_impl->receive_buffer.resize(server_impl->receive_buffer.size() + ws_frame.len);
+        httpd_ws_frame_t ws_frame = {};
 
-        if (httpd_ws_recv_frame(request, &ws_frame, ws_frame.len) != ESP_OK)
+        if (httpd_ws_recv_frame(request, &ws_frame, 0) != ESP_OK)
             return ESP_FAIL;
+
+        if (ws_frame.len)
+        {
+            auto rx_space = server_impl->receive_buffer.capacity() - server_impl->receive_buffer.size();
+
+            if (rx_space < ws_frame.len)
+                return ESP_FAIL;
+
+            ws_frame.payload = server_impl->receive_buffer.data();
+            server_impl->receive_buffer.resize(server_impl->receive_buffer.size() + ws_frame.len);
+
+            if (httpd_ws_recv_frame(request, &ws_frame, ws_frame.len) != ESP_OK)
+                return ESP_FAIL;
+        }
     }
 
     return ESP_OK;
@@ -121,6 +155,8 @@ websocket_server::websocket_server(const uint16_t port) : mp_implementation(std:
 
     ESP_ERROR_CHECK(httpd_start(&mp_implementation->handle, &config));
 
+    mp_implementation->receive_semaphore = xSemaphoreCreateMutex();
+    mp_implementation->transmit_semaphore = xSemaphoreCreateMutex();
     mp_implementation->receive_buffer.reserve(WS_BUFFER_SIZE);
     mp_implementation->transmit_buffer.reserve(WS_BUFFER_SIZE);
 
@@ -140,14 +176,68 @@ websocket_server::websocket_server(const uint16_t port) : mp_implementation(std:
 websocket_server::~websocket_server()
 {
     ESP_ERROR_CHECK(httpd_stop(mp_implementation->handle));
+
+    vSemaphoreDelete(mp_implementation->transmit_semaphore);
+    vSemaphoreDelete(mp_implementation->receive_semaphore);
 }
 
 websocket_server &websocket_server::operator>>(tlvcpp::tlv_tree_node &node)
 {
+    lock_guard guard(mp_implementation->receive_semaphore);
+
+    if (mp_implementation->socket_descriptor == -1)
+        return *this;
+
+    auto &buffer = mp_implementation->receive_buffer;
+
+    size_t dealt_with = 0;
+
+    while (true)
+    {
+        const auto data = buffer.data() + dealt_with;
+        const auto size = buffer.size() - dealt_with;
+
+        if (size < HEADER_SIZE)
+            break;
+
+        const auto message_size = *reinterpret_cast<const header_type *>(data);
+
+        if (message_size > WS_BUFFER_SIZE - HEADER_SIZE)
+        {
+            mp_implementation->receive_discard += (HEADER_SIZE + message_size - size);
+
+            dealt_with = buffer.size();
+
+            break;
+        }
+
+        if (!node.deserialize(data + HEADER_SIZE, message_size))
+            ESP_LOGW(TAG, "deserialization error!");
+
+        dealt_with += (HEADER_SIZE + message_size);
+    }
+
+    shift_left(buffer, dealt_with);
+
     return *this;
 }
 
 websocket_server &websocket_server::operator<<(const tlvcpp::tlv_tree_node &node)
 {
+    lock_guard guard(mp_implementation->transmit_semaphore);
+
+    if (mp_implementation->socket_descriptor == -1)
+        return *this;
+
+    if (!node.serialize(mp_implementation->transmit_buffer))
+    {
+        ESP_LOGW(TAG, "serialization error!");
+
+        return *this;
+    }
+
+    if (!mp_implementation->transmitting)
+        httpd_queue_work(mp_implementation->handle, send_async, mp_implementation.get());
+
     return *this;
 }
