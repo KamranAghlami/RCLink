@@ -41,28 +41,6 @@ public:
                 m_group(lv_group_create()),
                 m_screen(lv_scr_act())
     {
-        auto dispatch = [](void *argument)
-        {
-            auto &server = *static_cast<websocket_server *>(argument);
-
-            while (true)
-            {
-                tlvcpp::tlv_tree_node node;
-
-                server >> node;
-
-                node.dump();
-
-                server << node;
-
-                vTaskDelay(pdMS_TO_TICKS(100));
-            }
-
-            vTaskDelete(nullptr);
-        };
-
-        xTaskCreatePinnedToCore(dispatch, "dispatch_worker", 4U * 1024U, mp_websocket_server.get(), 5, nullptr, 0);
-
         m_sol_state.open_libraries();
 
         {
@@ -248,7 +226,33 @@ private:
                 mp_file_server = std::make_unique<file_server>(80, LV_FS_POSIX_PATH "/web");
 
             if (!mp_websocket_server)
+            {
                 mp_websocket_server = std::make_unique<websocket_server>(81);
+
+                auto dispatch = [](void *argument)
+                {
+                    auto &server = *static_cast<websocket_server *>(argument);
+
+                    while (true)
+                    {
+                        tlvcpp::tlv_tree_node node;
+
+                        server >> node;
+
+                        {
+                            node.dump();
+
+                            server << node;
+                        }
+
+                        vTaskDelay(pdMS_TO_TICKS(100));
+                    }
+
+                    vTaskDelete(nullptr);
+                };
+
+                xTaskCreatePinnedToCore(dispatch, "dispatch_worker", 4U * 1024U, mp_websocket_server.get(), 5, nullptr, 0);
+            }
         }
         else if (m_balls.size() < 5)
         {

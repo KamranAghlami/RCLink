@@ -12,7 +12,6 @@
     <link rel="icon" type="image/png" sizes="196x196" href="image/favicon.png">
     <script src="script/xterm.js"></script>
     <script src="script/addon-fit.js"></script>
-    <script src="script/addon-attach.js"></script>
     <script src="wasm/controller.js" defer=""></script>
 </head>
 
@@ -22,13 +21,7 @@
         const terminal = new Terminal();
         const fitAddon = new FitAddon.FitAddon();
 
-        const port = window.location.port ? parseInt(window.location.port, 10) + 1 : 81;
-        const address = `ws://${window.location.hostname}:${port}`;
-        const socket = new WebSocket(address);
-        const attachAddon = new AttachAddon.AttachAddon(socket);
-
         terminal.loadAddon(fitAddon);
-        terminal.loadAddon(attachAddon);
         terminal.open(document.getElementById('terminal'));
 
         fitAddon.fit();
@@ -40,6 +33,24 @@
         console.info = message => terminal.writeln('\x1B[1;32m' + message + '\x1B[0m');
         console.warn = message => terminal.writeln('\x1B[1;33m' + message + '\x1B[0m');
         console.error = message => terminal.writeln('\x1B[1;31m' + message + '\x1B[0m');
+
+        const port = window.location.port ? parseInt(window.location.port, 10) + 1 : 81;
+        const address = `ws://${window.location.hostname}:${port}`;
+        const socket = new WebSocket(address);
+
+        socket.addEventListener('open', (event) => {
+            console.info('connected!', event);
+
+            socket.send(new Uint8Array([0x01, 0x0D, 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x20, 0x57, 0x6F, 0x72, 0x6C, 0x64, 0x21]));
+        });
+
+        socket.addEventListener('message', (event) => {
+            const hex_string = Array.from(new Uint8Array(event.data))
+                .map(byte => byte.toString(16).padStart(2, '0'))
+                .join(' ');
+
+            console.log(hex_string);
+        });
     </script>
 </body>
 
