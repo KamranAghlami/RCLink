@@ -29,19 +29,19 @@
         window.addEventListener('resize', () => fitAddon.fit());
 
         console.clear = () => terminal.clear();
-        console.log = message => terminal.writeln(message);
-        console.info = message => terminal.writeln('\x1B[1;32m' + message + '\x1B[0m');
-        console.warn = message => terminal.writeln('\x1B[1;33m' + message + '\x1B[0m');
-        console.error = message => terminal.writeln('\x1B[1;31m' + message + '\x1B[0m');
+        console.log = (...args) => terminal.writeln(args.join(' '));
+        console.info = (...args) => terminal.writeln('\x1B[1;32m' + args.join(' ') + '\x1B[0m');
+        console.warn = (...args) => terminal.writeln('\x1B[1;33m' + args.join(' ') + '\x1B[0m');
+        console.error = (...args) => terminal.writeln('\x1B[1;31m' + args.join(' ') + '\x1B[0m');
 
         const port = window.location.port ? parseInt(window.location.port, 10) + 1 : 81;
         const address = `ws://${window.location.hostname}:${port}`;
         const socket = new WebSocket(address);
 
-        socket.addEventListener('open', (event) => {
-            console.info('connected!', event);
+        socket.addEventListener('open', () => {
+            console.info('connected!');
 
-            socket.send(new Uint8Array([0x01, 0x0D, 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x20, 0x57, 0x6F, 0x72, 0x6C, 0x64, 0x21]));
+            socket.send(new Uint8Array([0x0f, 0x00, 0x01, 0x0D, 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x20, 0x57, 0x6F, 0x72, 0x6C, 0x64, 0x21]));
         });
 
         socket.addEventListener('message', (event) => {
@@ -49,7 +49,7 @@
                 .map(byte => byte.toString(16).padStart(2, '0'))
                 .join(' ');
 
-            console.log(hex_string);
+            console.log('received:', hex_string);
         });
     </script>
 </body>

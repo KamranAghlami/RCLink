@@ -239,6 +239,7 @@ private:
 
                         server >> node;
 
+                        if (node.data().tag() || node.children().size())
                         {
                             node.dump();
 
