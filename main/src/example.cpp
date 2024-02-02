@@ -4,6 +4,7 @@
 #include <vector>
 
 #include <esp_log.h>
+#include <freertos/FreeRTOS.h>
 #include <sol/sol.hpp>
 
 #include "hardware/display.h"
@@ -40,6 +41,28 @@ public:
                 m_group(lv_group_create()),
                 m_screen(lv_scr_act())
     {
+        auto dispatch = [](void *argument)
+        {
+            auto &server = *static_cast<websocket_server *>(argument);
+
+            while (true)
+            {
+                tlvcpp::tlv_tree_node node;
+
+                server >> node;
+
+                node.dump();
+
+                server << node;
+
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+
+            vTaskDelete(nullptr);
+        };
+
+        xTaskCreatePinnedToCore(dispatch, "dispatch_worker", 4U * 1024U, mp_websocket_server.get(), 5, nullptr, 0);
+
         m_sol_state.open_libraries();
 
         {

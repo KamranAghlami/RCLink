@@ -20,7 +20,6 @@ struct websocket_server_implementation
     std::vector<uint8_t> receive_buffer;
     std::vector<uint8_t> transmit_buffer;
     bool transmitting;
-    data_stream *stream;
 };
 
 static void shift_left(std::vector<uint8_t> &buffer, size_t amount)
@@ -107,28 +106,7 @@ static esp_err_t handler(httpd_req_t *request)
             return ESP_FAIL;
     }
 
-    for (const auto byte : server_impl->receive_buffer)
-        switch (byte)
-        {
-        case '\x0d':
-            server_impl->transmit_buffer.push_back('\x0a');
-            server_impl->transmit_buffer.push_back('\x0d');
-            break;
-
-        case '\x7f':
-            server_impl->transmit_buffer.push_back('\x08');
-            server_impl->transmit_buffer.push_back(' ');
-            server_impl->transmit_buffer.push_back('\x08');
-            break;
-
-        default:
-            server_impl->transmit_buffer.push_back(byte);
-            break;
-        }
-
-    server_impl->receive_buffer.resize(0);
-
-    return httpd_queue_work(server_impl->handle, send_async, server_impl);
+    return ESP_OK;
 }
 
 websocket_server::websocket_server(const uint16_t port) : mp_implementation(std::make_unique<websocket_server_implementation>())
@@ -164,7 +142,12 @@ websocket_server::~websocket_server()
     ESP_ERROR_CHECK(httpd_stop(mp_implementation->handle));
 }
 
-void websocket_server::set_data_stream(data_stream &stream)
+websocket_server &websocket_server::operator>>(tlvcpp::tlv_tree_node &node)
 {
-    mp_implementation->stream = &stream;
+    return *this;
+}
+
+websocket_server &websocket_server::operator<<(const tlvcpp::tlv_tree_node &node)
+{
+    return *this;
 }

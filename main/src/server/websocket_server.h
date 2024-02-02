@@ -6,13 +6,14 @@
 
 struct websocket_server_implementation;
 
-class websocket_server
+class websocket_server : public data_stream
 {
 public:
     websocket_server(const uint16_t port = 81);
     ~websocket_server();
 
-    void set_data_stream(data_stream &stream);
+    websocket_server &operator>>(tlvcpp::tlv_tree_node &node) override;
+    websocket_server &operator<<(const tlvcpp::tlv_tree_node &node) override;
 
 private:
     std::unique_ptr<websocket_server_implementation> mp_implementation;

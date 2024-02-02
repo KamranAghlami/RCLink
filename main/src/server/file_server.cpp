@@ -56,7 +56,8 @@ static void start_workers(file_server_implementation &server_impl)
     server_impl.requests_queue = xQueueCreate(WORKER_COUNT, sizeof(request_context));
 
     for (size_t i = 0; i < WORKER_COUNT; i++)
-        xTaskCreatePinnedToCore(request_worker_task, "request_worker",
+        xTaskCreatePinnedToCore(request_worker_task,
+                                "request_worker",
                                 WORKER_STACK_SIZE,
                                 &server_impl,
                                 SERVER_PRIORITY,
