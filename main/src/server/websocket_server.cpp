@@ -6,6 +6,7 @@
 #include <esp_err.h>
 #include <esp_log.h>
 #include <esp_http_server.h>
+#include <tlvcpp/utilities/hexdump.h>
 
 #include "lock_guard.h"
 
@@ -56,28 +57,54 @@ static void send_async(void *arg)
     if (server_impl->socket_descriptor == -1)
         return;
 
-    bool final = server_impl->transmit_buffer.size() <= WS_SEND_CHUNK_SIZE;
+    auto &buffer = server_impl->transmit_buffer;
+    bool final = buffer.size() <= WS_SEND_CHUNK_SIZE;
 
     httpd_ws_frame_t ws_frame = {
         .final = final,
         .fragmented = true,
         .type = server_impl->transmitting ? HTTPD_WS_TYPE_CONTINUE : HTTPD_WS_TYPE_BINARY,
-        .payload = server_impl->transmit_buffer.data(),
-        .len = final ? server_impl->transmit_buffer.size() : WS_SEND_CHUNK_SIZE,
+        .payload = buffer.data(),
+        .len = final ? buffer.size() : WS_SEND_CHUNK_SIZE,
     };
 
-    httpd_ws_send_frame_async(server_impl->handle, server_impl->socket_descriptor, &ws_frame);
+    if (httpd_ws_send_frame_async(server_impl->handle, server_impl->socket_descriptor, &ws_frame) != ESP_OK)
+    {
+        ESP_LOGW(TAG, "couldn't send data! retrying...");
+
+        httpd_queue_work(server_impl->handle, send_async, server_impl);
+
+        return;
+    }
+
+    ESP_LOGI(TAG, "sent %zu bytes.", ws_frame.len);
+    tlvcpp::hexdump(ws_frame.payload, ws_frame.len);
 
     server_impl->transmitting = !final;
 
     if (server_impl->transmitting)
     {
-        shift_left(server_impl->transmit_buffer, WS_SEND_CHUNK_SIZE);
+        shift_left(buffer, WS_SEND_CHUNK_SIZE);
 
         httpd_queue_work(server_impl->handle, send_async, server_impl);
+
+        return;
     }
-    else
-        server_impl->transmit_buffer.resize(0);
+
+    if (buffer.capacity() > WS_BUFFER_SIZE)
+    {
+        {
+            std::remove_reference<decltype(buffer)>::type new_buffer;
+
+            buffer.swap(new_buffer);
+        }
+
+        buffer.reserve(WS_BUFFER_SIZE);
+
+        return;
+    }
+
+    buffer.resize(0);
 }
 
 static void switch_client(websocket_server_implementation &server_impl)
@@ -127,16 +154,19 @@ static esp_err_t handler(httpd_req_t *request)
 
         if (ws_frame.len)
         {
-            auto rx_space = server_impl->receive_buffer.capacity() - server_impl->receive_buffer.size();
+            auto &buffer = server_impl->receive_buffer;
 
-            if (rx_space < ws_frame.len)
+            if ((buffer.capacity() - buffer.size()) < ws_frame.len)
                 return ESP_FAIL;
 
-            ws_frame.payload = server_impl->receive_buffer.data();
-            server_impl->receive_buffer.resize(server_impl->receive_buffer.size() + ws_frame.len);
+            buffer.resize(buffer.size() + ws_frame.len);
+            ws_frame.payload = buffer.data();
 
             if (httpd_ws_recv_frame(request, &ws_frame, ws_frame.len) != ESP_OK)
                 return ESP_FAIL;
+
+            ESP_LOGI(TAG, "received %zu bytes.", ws_frame.len);
+            tlvcpp::hexdump(ws_frame.payload, ws_frame.len);
         }
     }
 
@@ -201,20 +231,34 @@ websocket_server &websocket_server::operator>>(tlvcpp::tlv_tree_node &node)
             break;
 
         const auto message_size = *reinterpret_cast<const header_type *>(data);
+        const auto total_size = HEADER_SIZE + message_size;
 
         if (message_size > WS_BUFFER_SIZE - HEADER_SIZE)
         {
-            mp_implementation->receive_discard += (HEADER_SIZE + message_size - size);
+            mp_implementation->receive_discard += (total_size - size);
 
             dealt_with = buffer.size();
 
             break;
         }
 
-        if (!node.deserialize(data + HEADER_SIZE, message_size))
+        if (size < total_size)
+            break;
+
+        tlvcpp::tlv_tree_node received_node;
+
+        if (received_node.deserialize(data + HEADER_SIZE, message_size))
+        {
+            if (received_node.data().tag())
+                node.add_child() = std::move(received_node);
+            else
+                for (const auto &child : received_node.children())
+                    node.add_child() = std::move(child);
+        }
+        else
             ESP_LOGW(TAG, "deserialization error!");
 
-        dealt_with += (HEADER_SIZE + message_size);
+        dealt_with += total_size;
     }
 
     shift_left(buffer, dealt_with);
@@ -229,12 +273,33 @@ websocket_server &websocket_server::operator<<(const tlvcpp::tlv_tree_node &node
     if (mp_implementation->socket_descriptor == -1)
         return *this;
 
-    if (!node.serialize(mp_implementation->transmit_buffer))
+    auto &buffer = mp_implementation->transmit_buffer;
+    const auto size = buffer.size();
+
+    for (size_t i = 0; i < sizeof(header_type); i++)
+        buffer.push_back(0);
+
+    size_t bytes_written = 0;
+
+    if (!node.serialize(buffer, &bytes_written))
     {
         ESP_LOGW(TAG, "serialization error!");
 
+        buffer.resize(size);
+
         return *this;
     }
+
+    if (!bytes_written || bytes_written > std::numeric_limits<header_type>::max())
+    {
+        buffer.resize(size);
+
+        return *this;
+    }
+
+    auto message_size = reinterpret_cast<header_type *>(&*buffer.end() - (HEADER_SIZE + bytes_written));
+
+    *message_size = bytes_written;
 
     if (!mp_implementation->transmitting)
         httpd_queue_work(mp_implementation->handle, send_async, mp_implementation.get());

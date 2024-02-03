@@ -38,18 +38,22 @@
         const address = `ws://${window.location.hostname}:${port}`;
         const socket = new WebSocket(address);
 
+        socket.binaryType = "arraybuffer";
+
         socket.addEventListener('open', () => {
             console.info('connected!');
 
-            socket.send(new Uint8Array([0x0f, 0x00, 0x01, 0x0D, 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x20, 0x57, 0x6F, 0x72, 0x6C, 0x64, 0x21]));
+            socket.send(new Uint8Array([0x08, 0x00, 0x01, 0x06, 0x48, 0x65, 0x6C, 0x6C, 0x6F, 0x2C, 0x09, 0x00, 0x01, 0x07, 0x20, 0x57, 0x6F, 0x72, 0x6C, 0x64, 0x21]));
         });
 
         socket.addEventListener('message', (event) => {
-            const hex_string = Array.from(new Uint8Array(event.data))
-                .map(byte => byte.toString(16).padStart(2, '0'))
+            const array = Array.from(new Uint8Array(event.data));
+            const hex_str = array.map(byte => byte.toString(16)
+                .padStart(2, '0'))
                 .join(' ');
 
-            console.log('received:', hex_string);
+            console.log('received', array.length, 'bytes:');
+            console.log(' ' + hex_str);
         });
     </script>
 </body>
