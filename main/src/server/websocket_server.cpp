@@ -30,6 +30,17 @@ struct websocket_server_implementation
     bool transmitting;
 };
 
+static void shift_left(uint8_t *buffer, size_t size, size_t amount)
+{
+    if (!amount)
+        return;
+
+    const size_t new_size = size - amount;
+
+    if (new_size)
+        std::memmove(buffer, buffer + amount, new_size);
+}
+
 static void shift_left(std::vector<uint8_t> &buffer, size_t amount)
 {
     if (!amount)
@@ -161,6 +172,17 @@ static esp_err_t handler(httpd_req_t *request)
 
             if (httpd_ws_recv_frame(request, &ws_frame, ws_frame.len) != ESP_OK)
                 return ESP_FAIL;
+
+            if (server_impl->receive_discard)
+            {
+                const auto discardable = std::min(server_impl->receive_discard, ws_frame.len);
+
+                if (discardable < ws_frame.len)
+                    shift_left(ws_frame.payload, ws_frame.len, discardable);
+
+                buffer.resize(buffer.size() - discardable);
+                server_impl->receive_discard -= discardable;
+            }
         }
     }
 
