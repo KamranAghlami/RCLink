@@ -240,11 +240,7 @@ private:
                         server >> node;
 
                         if (node.data().tag() || node.children().size())
-                        {
-                            node.dump();
-
                             server << node;
-                        }
 
                         vTaskDelay(pdMS_TO_TICKS(100));
                     }

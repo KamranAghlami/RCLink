@@ -6,7 +6,6 @@
 #include <esp_err.h>
 #include <esp_log.h>
 #include <esp_http_server.h>
-#include <tlvcpp/utilities/hexdump.h>
 
 #include "lock_guard.h"
 
@@ -76,9 +75,6 @@ static void send_async(void *arg)
 
         return;
     }
-
-    ESP_LOGI(TAG, "sent %zu bytes.", ws_frame.len);
-    tlvcpp::hexdump(ws_frame.payload, ws_frame.len);
 
     server_impl->transmitting = !final;
 
@@ -165,9 +161,6 @@ static esp_err_t handler(httpd_req_t *request)
 
             if (httpd_ws_recv_frame(request, &ws_frame, ws_frame.len) != ESP_OK)
                 return ESP_FAIL;
-
-            ESP_LOGI(TAG, "received %zu bytes.", ws_frame.len);
-            tlvcpp::hexdump(ws_frame.payload, ws_frame.len);
         }
     }
 
