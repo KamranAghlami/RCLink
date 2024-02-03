@@ -80,7 +80,7 @@ static void send_async(void *arg)
 
     if (httpd_ws_send_frame_async(server_impl->handle, server_impl->socket_descriptor, &ws_frame) != ESP_OK)
     {
-        ESP_LOGW(TAG, "couldn't send data! retrying...");
+        ESP_LOGW(TAG, "couldn't send frame! retrying...");
 
         httpd_queue_work(server_impl->handle, send_async, server_impl);
 
@@ -142,11 +142,7 @@ static esp_err_t handler(httpd_req_t *request)
     auto server_impl = static_cast<websocket_server_implementation *>(request->user_ctx);
 
     if (request->method == HTTP_GET)
-    {
-        switch_client(*server_impl);
-
         return ESP_OK;
-    }
 
     {
         lock_guard guard(server_impl->receive_semaphore);
@@ -157,7 +153,11 @@ static esp_err_t handler(httpd_req_t *request)
         httpd_ws_frame_t ws_frame = {};
 
         if (httpd_ws_recv_frame(request, &ws_frame, 0) != ESP_OK)
+        {
+            ESP_LOGW(TAG, "couldn't receive frame size!");
+
             return ESP_FAIL;
+        }
 
         if (ws_frame.len)
         {
@@ -165,13 +165,21 @@ static esp_err_t handler(httpd_req_t *request)
             const auto size = buffer.size();
 
             if ((buffer.capacity() - size) < ws_frame.len)
+            {
+                ESP_LOGW(TAG, "receive buffer full!");
+
                 return ESP_FAIL;
+            }
 
             buffer.resize(size + ws_frame.len);
             ws_frame.payload = buffer.data() + size;
 
             if (httpd_ws_recv_frame(request, &ws_frame, ws_frame.len) != ESP_OK)
+            {
+                ESP_LOGW(TAG, "couldn't receive frame!");
+
                 return ESP_FAIL;
+            }
 
             if (server_impl->receive_discard)
             {
@@ -189,8 +197,34 @@ static esp_err_t handler(httpd_req_t *request)
     return ESP_OK;
 }
 
+void on_connected(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+    ESP_LOGI(TAG, "connected.");
+
+    auto server_impl = static_cast<websocket_server_implementation *>(arg);
+
+    switch_client(*server_impl);
+}
+
+void on_disconnected(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
+{
+    ESP_LOGI(TAG, "disconnected.");
+
+    auto server_impl = static_cast<websocket_server_implementation *>(arg);
+
+    server_impl->socket_descriptor = -1;
+}
+
 websocket_server::websocket_server(const uint16_t port) : mp_implementation(std::make_unique<websocket_server_implementation>())
 {
+    ESP_ERROR_CHECK(esp_event_handler_register(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_ON_CONNECTED, on_connected, mp_implementation.get()));
+    ESP_ERROR_CHECK(esp_event_handler_register(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_DISCONNECTED, on_disconnected, mp_implementation.get()));
+
+    mp_implementation->receive_semaphore = xSemaphoreCreateMutex();
+    mp_implementation->transmit_semaphore = xSemaphoreCreateMutex();
+    mp_implementation->receive_buffer.reserve(WS_BUFFER_SIZE);
+    mp_implementation->transmit_buffer.reserve(WS_BUFFER_SIZE);
+
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 
     config.task_priority = SERVER_PRIORITY;
@@ -200,11 +234,6 @@ websocket_server::websocket_server(const uint16_t port) : mp_implementation(std:
     config.max_open_sockets = 5U;
 
     ESP_ERROR_CHECK(httpd_start(&mp_implementation->handle, &config));
-
-    mp_implementation->receive_semaphore = xSemaphoreCreateMutex();
-    mp_implementation->transmit_semaphore = xSemaphoreCreateMutex();
-    mp_implementation->receive_buffer.reserve(WS_BUFFER_SIZE);
-    mp_implementation->transmit_buffer.reserve(WS_BUFFER_SIZE);
 
     const httpd_uri_t ws_get = {
         .uri = "/",
@@ -225,6 +254,9 @@ websocket_server::~websocket_server()
 
     vSemaphoreDelete(mp_implementation->transmit_semaphore);
     vSemaphoreDelete(mp_implementation->receive_semaphore);
+
+    ESP_ERROR_CHECK(esp_event_handler_unregister(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_DISCONNECTED, on_disconnected));
+    ESP_ERROR_CHECK(esp_event_handler_unregister(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_ON_CONNECTED, on_connected));
 }
 
 websocket_server &websocket_server::operator>>(tlvcpp::tlv_tree_node &node)
