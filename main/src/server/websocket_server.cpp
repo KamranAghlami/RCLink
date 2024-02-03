@@ -155,12 +155,13 @@ static esp_err_t handler(httpd_req_t *request)
         if (ws_frame.len)
         {
             auto &buffer = server_impl->receive_buffer;
+            const auto size = buffer.size();
 
-            if ((buffer.capacity() - buffer.size()) < ws_frame.len)
+            if ((buffer.capacity() - size) < ws_frame.len)
                 return ESP_FAIL;
 
-            buffer.resize(buffer.size() + ws_frame.len);
-            ws_frame.payload = buffer.data();
+            buffer.resize(size + ws_frame.len);
+            ws_frame.payload = buffer.data() + size;
 
             if (httpd_ws_recv_frame(request, &ws_frame, ws_frame.len) != ESP_OK)
                 return ESP_FAIL;
