@@ -142,7 +142,11 @@ static esp_err_t handler(httpd_req_t *request)
     auto server_impl = static_cast<websocket_server_implementation *>(request->user_ctx);
 
     if (request->method == HTTP_GET)
+    {
+        switch_client(*server_impl);
+
         return ESP_OK;
+    }
 
     {
         lock_guard guard(server_impl->receive_semaphore);
@@ -200,19 +204,11 @@ static esp_err_t handler(httpd_req_t *request)
 void on_connected(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     ESP_LOGI(TAG, "connected.");
-
-    auto server_impl = static_cast<websocket_server_implementation *>(arg);
-
-    switch_client(*server_impl);
 }
 
 void on_disconnected(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
     ESP_LOGI(TAG, "disconnected.");
-
-    auto server_impl = static_cast<websocket_server_implementation *>(arg);
-
-    server_impl->socket_descriptor = -1;
 }
 
 websocket_server::websocket_server(const uint16_t port) : mp_implementation(std::make_unique<websocket_server_implementation>())
