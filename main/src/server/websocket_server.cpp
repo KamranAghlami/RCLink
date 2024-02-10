@@ -14,8 +14,9 @@ using header_type = uint16_t;
 constexpr const char *TAG = "websocket_server";
 constexpr const UBaseType_t SERVER_CORE_ID = 1U;
 constexpr const UBaseType_t SERVER_PRIORITY = 5U;
-constexpr const size_t WS_BUFFER_SIZE = 16U * 1024U;
-constexpr const size_t WS_SEND_CHUNK_SIZE = 1024U;
+constexpr const size_t WS_RX_BUFFER_SIZE = 4U * 1024U;
+constexpr const size_t WS_TX_BUFFER_SIZE = 16U * 1024U;
+constexpr const size_t WS_TX_CHUNK_SIZE = 1024U;
 constexpr const size_t HEADER_SIZE = sizeof(header_type);
 
 struct websocket_server_implementation
@@ -68,14 +69,14 @@ static void send_async(void *arg)
         return;
 
     auto &buffer = server_impl->transmit_buffer;
-    bool final = buffer.size() <= WS_SEND_CHUNK_SIZE;
+    bool final = buffer.size() <= WS_TX_CHUNK_SIZE;
 
     httpd_ws_frame_t ws_frame = {
         .final = final,
         .fragmented = true,
         .type = server_impl->transmitting ? HTTPD_WS_TYPE_CONTINUE : HTTPD_WS_TYPE_BINARY,
         .payload = buffer.data(),
-        .len = final ? buffer.size() : WS_SEND_CHUNK_SIZE,
+        .len = final ? buffer.size() : WS_TX_CHUNK_SIZE,
     };
 
     if (httpd_ws_send_frame_async(server_impl->handle, server_impl->socket_descriptor, &ws_frame) != ESP_OK)
@@ -91,14 +92,14 @@ static void send_async(void *arg)
 
     if (server_impl->transmitting)
     {
-        shift_left(buffer, WS_SEND_CHUNK_SIZE);
+        shift_left(buffer, WS_TX_CHUNK_SIZE);
 
         httpd_queue_work(server_impl->handle, send_async, server_impl);
 
         return;
     }
 
-    if (buffer.capacity() > WS_BUFFER_SIZE)
+    if (buffer.capacity() > WS_TX_BUFFER_SIZE)
     {
         {
             std::remove_reference<decltype(buffer)>::type new_buffer;
@@ -106,7 +107,7 @@ static void send_async(void *arg)
             buffer.swap(new_buffer);
         }
 
-        buffer.reserve(WS_BUFFER_SIZE);
+        buffer.reserve(WS_TX_BUFFER_SIZE);
 
         return;
     }
@@ -218,8 +219,8 @@ websocket_server::websocket_server(const uint16_t port) : mp_implementation(std:
 
     mp_implementation->receive_semaphore = xSemaphoreCreateMutex();
     mp_implementation->transmit_semaphore = xSemaphoreCreateMutex();
-    mp_implementation->receive_buffer.reserve(WS_BUFFER_SIZE);
-    mp_implementation->transmit_buffer.reserve(WS_BUFFER_SIZE);
+    mp_implementation->receive_buffer.reserve(WS_RX_BUFFER_SIZE);
+    mp_implementation->transmit_buffer.reserve(WS_TX_BUFFER_SIZE);
 
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 
@@ -277,7 +278,7 @@ websocket_server &websocket_server::operator>>(tlvcpp::tlv_tree_node &node)
         const auto message_size = *reinterpret_cast<const header_type *>(data);
         const auto total_size = HEADER_SIZE + message_size;
 
-        if (message_size > WS_BUFFER_SIZE - HEADER_SIZE)
+        if (message_size > WS_RX_BUFFER_SIZE - HEADER_SIZE)
         {
             mp_implementation->receive_discard += (total_size - size);
 
