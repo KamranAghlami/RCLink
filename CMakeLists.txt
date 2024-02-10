@@ -8,4 +8,4 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
-project(TDisplayS3 LANGUAGES C CXX)
+project(RCLink LANGUAGES C CXX)
