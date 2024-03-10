@@ -2,14 +2,18 @@
 <html>
 
 <head>
+    <title>RCLink</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,height=device-height,initial-scale=1">
     <meta name="description" content="PWA for controlling devices using gamepads.">
     <meta name="theme-color" content="#000000">
+    <link rel="manifest" href="manifest.json" crossorigin="use-credentials">
     <link rel="stylesheet" href="css/normalize.css">
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/xterm.css" />
-    <link rel="icon" type="image/png" sizes="196x196" href="image/favicon.png">
+    <link rel="icon" type="image/png" href="image/icon.png">
+    <link rel="apple-touch-icon" href="image/icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <script src="script/xterm.js"></script>
     <script src="script/addon-fit.js"></script>
     <script src="wasm/RCLinkApp.js" defer=""></script>
@@ -27,6 +31,7 @@
         fitAddon.fit();
 
         window.addEventListener('resize', () => fitAddon.fit());
+        window.addEventListener('orientationchange', () => fitAddon.fit());
 
         console.clear = () => terminal.clear();
         console.log = (...args) => terminal.writeln(args.join(' '));
