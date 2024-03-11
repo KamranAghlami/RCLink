@@ -229,6 +229,7 @@ websocket_server::websocket_server(const uint16_t port) : mp_implementation(std:
     config.server_port = port;
     config.ctrl_port += port;
     config.max_open_sockets = 5U;
+    config.lru_purge_enable = true;
 
     ESP_ERROR_CHECK(httpd_start(&mp_implementation->handle, &config));
 

@@ -278,6 +278,7 @@ file_server::file_server(const uint16_t port, const std::string &base_path) : mp
     config.server_port = port;
     config.ctrl_port += port;
     config.max_open_sockets = std::min((2U * WORKER_COUNT) + 3U, 11U);
+    config.lru_purge_enable = true;
     config.uri_match_fn = httpd_uri_match_wildcard;
 
     ESP_ERROR_CHECK(httpd_start(&mp_implementation->handle, &config));
