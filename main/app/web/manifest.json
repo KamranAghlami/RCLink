@@ -7,13 +7,13 @@
   "background_color": "#000000",
   "icons": [
     {
-      "src": "image/icon512_maskable.png",
+      "src": "image/icon512_small.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "image/icon512_rounded.png",
+      "src": "image/icon512_big.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
