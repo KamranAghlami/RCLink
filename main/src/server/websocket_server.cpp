@@ -202,21 +202,8 @@ static esp_err_t handler(httpd_req_t *request)
     return ESP_OK;
 }
 
-void on_connected(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
-{
-    ESP_LOGI(TAG, "connected.");
-}
-
-void on_disconnected(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
-{
-    ESP_LOGI(TAG, "disconnected.");
-}
-
 websocket_server::websocket_server(const uint16_t port) : mp_implementation(std::make_unique<websocket_server_implementation>())
 {
-    ESP_ERROR_CHECK(esp_event_handler_register(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_ON_CONNECTED, on_connected, mp_implementation.get()));
-    ESP_ERROR_CHECK(esp_event_handler_register(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_DISCONNECTED, on_disconnected, mp_implementation.get()));
-
     mp_implementation->receive_semaphore = xSemaphoreCreateMutex();
     mp_implementation->transmit_semaphore = xSemaphoreCreateMutex();
     mp_implementation->receive_buffer.reserve(WS_RX_BUFFER_SIZE);
@@ -252,9 +239,6 @@ websocket_server::~websocket_server()
 
     vSemaphoreDelete(mp_implementation->transmit_semaphore);
     vSemaphoreDelete(mp_implementation->receive_semaphore);
-
-    ESP_ERROR_CHECK(esp_event_handler_unregister(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_DISCONNECTED, on_disconnected));
-    ESP_ERROR_CHECK(esp_event_handler_unregister(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_ON_CONNECTED, on_connected));
 }
 
 websocket_server &websocket_server::operator>>(tlvcpp::tlv_tree_node &node)
