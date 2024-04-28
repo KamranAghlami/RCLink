@@ -379,6 +379,10 @@ file_server::file_server(const uint16_t port, const std::string &base_path) : mp
     ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->handle, &get));
 
 #ifndef NDEBUG
+    // enables uploading file on debug builds.
+    //
+    // curl -X POST --data-binary @main/app/web/index.html http://192.168.4.1/index.html
+
     const httpd_uri_t post = {
         .uri = "/*",
         .method = HTTP_POST,
