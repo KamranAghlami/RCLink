@@ -293,8 +293,6 @@ static esp_err_t post_handler(httpd_req_t *request)
 
     if (!strcmp(file_name, "/"))
         strcat(file_path, "index.html");
-    else if (!strcmp(file_name, "/index.html"))
-        return get_index_handler(request);
 
     if (file_path[strlen(file_path) - 1] == '/')
     {
