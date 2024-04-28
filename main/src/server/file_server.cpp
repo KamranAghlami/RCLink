@@ -269,16 +269,6 @@ static esp_err_t post_handler(httpd_req_t *request)
 {
     const auto server_impl = static_cast<file_server_implementation *>(request->user_ctx);
 
-    // enabling this breaks file upload for some reason.
-    //
-    // if (!is_on_worker(*server_impl))
-    // {
-    //     if (server_impl->is_running)
-    //         return submit_work(*server_impl, request, post_handler);
-    //     else
-    //         return ESP_FAIL;
-    // }
-
     const auto base_path_length = server_impl->base_path.size();
     char file_path[CONFIG_LITTLEFS_OBJ_NAME_LEN] = {0};
 
@@ -313,8 +303,6 @@ static esp_err_t post_handler(httpd_req_t *request)
     }
 
     {
-        ESP_LOGI(TAG, "writing file: %s", file_path);
-
         uint8_t buffer[1024U];
         size_t remaining_bytes = request->content_len;
 
@@ -332,7 +320,7 @@ static esp_err_t post_handler(httpd_req_t *request)
 
                 httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
 
-                ESP_LOGE(TAG, "receive error: %d", received_bytes);
+                ESP_LOGE(TAG, "error while receiving: %d", received_bytes);
 
                 return ESP_FAIL;
             }
@@ -344,14 +332,12 @@ static esp_err_t post_handler(httpd_req_t *request)
 
                 httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
 
-                ESP_LOGE(TAG, "write error!");
+                ESP_LOGE(TAG, "error while writing file: %s", file_path);
 
                 return ESP_FAIL;
             }
 
             remaining_bytes -= received_bytes;
-
-            ESP_LOGI(TAG, "written %zu/%zu", request->content_len - remaining_bytes, request->content_len);
         }
     }
 
