@@ -181,14 +181,14 @@ static esp_err_t add_content_type(httpd_req_t *request, const char *file_path)
     return httpd_resp_set_type(request, content_type);
 }
 
-static esp_err_t handler(httpd_req_t *request)
+static esp_err_t get_handler(httpd_req_t *request)
 {
     const auto server_impl = static_cast<file_server_implementation *>(request->user_ctx);
 
     if (!is_on_worker(*server_impl))
     {
         if (server_impl->is_running)
-            return submit_work(*server_impl, request, handler);
+            return submit_work(*server_impl, request, get_handler);
         else
             return ESP_FAIL;
     }
@@ -265,6 +265,103 @@ static esp_err_t handler(httpd_req_t *request)
     return ESP_OK;
 }
 
+static esp_err_t post_handler(httpd_req_t *request)
+{
+    const auto server_impl = static_cast<file_server_implementation *>(request->user_ctx);
+
+    // if (!is_on_worker(*server_impl))
+    // {
+    //     if (server_impl->is_running)
+    //         return submit_work(*server_impl, request, post_handler);
+    //     else
+    //         return ESP_FAIL;
+    // }
+
+    const auto base_path_length = server_impl->base_path.size();
+    char file_path[CONFIG_LITTLEFS_OBJ_NAME_LEN] = {0};
+
+    file_path_from_uri(request->uri, server_impl->base_path.c_str(), file_path, sizeof(file_path));
+
+    if (!*file_path)
+    {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+
+        return ESP_FAIL;
+    }
+
+    const char *file_name = file_path + base_path_length;
+
+    if (!strcmp(file_name, "/"))
+        strcat(file_path, "index.html");
+    else if (!strcmp(file_name, "/index.html"))
+        return get_index_handler(request);
+
+    if (file_path[strlen(file_path) - 1] == '/')
+    {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+
+        return ESP_FAIL;
+    }
+
+    FILE *file = fopen(file_path, "w");
+
+    if (!file)
+    {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+
+        return ESP_FAIL;
+    }
+
+    {
+        ESP_LOGI(TAG, "writing file: %s", file_path);
+
+        uint8_t buffer[1024U];
+        size_t remaining_bytes = request->content_len;
+
+        while (remaining_bytes)
+        {
+            int received_bytes = httpd_req_recv(request, reinterpret_cast<char *>(buffer), std::min(remaining_bytes, static_cast<size_t>(sizeof(buffer))));
+
+            if (received_bytes < 0)
+            {
+                if (received_bytes == HTTPD_SOCK_ERR_TIMEOUT)
+                    continue;
+
+                fclose(file);
+                unlink(file_path);
+
+                httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+
+                ESP_LOGE(TAG, "receive error: %d", received_bytes);
+
+                return ESP_FAIL;
+            }
+
+            if (received_bytes && (fwrite(buffer, 1, received_bytes, file) != received_bytes))
+            {
+                fclose(file);
+                unlink(file_path);
+
+                httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+
+                ESP_LOGE(TAG, "write error!");
+
+                return ESP_FAIL;
+            }
+
+            remaining_bytes -= received_bytes;
+
+            ESP_LOGI(TAG, "written %zu/%zu", request->content_len - remaining_bytes, request->content_len);
+        }
+    }
+
+    fclose(file);
+
+    httpd_resp_send(request, nullptr, 0);
+
+    return ESP_OK;
+}
+
 file_server::file_server(const uint16_t port, const std::string &base_path) : mp_implementation(std::make_unique<file_server_implementation>())
 {
     start_workers(*mp_implementation);
@@ -286,7 +383,7 @@ file_server::file_server(const uint16_t port, const std::string &base_path) : mp
     const httpd_uri_t get = {
         .uri = "/*",
         .method = HTTP_GET,
-        .handler = handler,
+        .handler = get_handler,
         .user_ctx = mp_implementation.get(),
         .is_websocket = false,
         .handle_ws_control_frames = false,
@@ -294,6 +391,20 @@ file_server::file_server(const uint16_t port, const std::string &base_path) : mp
     };
 
     ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->handle, &get));
+
+#ifndef NDEBUG
+    const httpd_uri_t post = {
+        .uri = "/*",
+        .method = HTTP_POST,
+        .handler = post_handler,
+        .user_ctx = mp_implementation.get(),
+        .is_websocket = false,
+        .handle_ws_control_frames = false,
+        .supported_subprotocol = nullptr,
+    };
+
+    ESP_ERROR_CHECK(httpd_register_uri_handler(mp_implementation->handle, &post));
+#endif
 }
 
 file_server::~file_server()
