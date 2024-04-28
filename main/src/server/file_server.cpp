@@ -269,6 +269,8 @@ static esp_err_t post_handler(httpd_req_t *request)
 {
     const auto server_impl = static_cast<file_server_implementation *>(request->user_ctx);
 
+    // enabling this breaks file upload for some reason.
+    //
     // if (!is_on_worker(*server_impl))
     // {
     //     if (server_impl->is_running)
