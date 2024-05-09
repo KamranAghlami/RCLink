@@ -5,6 +5,7 @@
 #include <esp_err.h>
 #include <esp_log.h>
 #include <esp_http_server.h>
+#include <esp_rom_md5.h>
 
 constexpr const char *TAG = "file_server";
 constexpr const UBaseType_t SERVER_CORE_ID = 1U;
@@ -265,6 +266,35 @@ static esp_err_t get_handler(httpd_req_t *request)
     return ESP_OK;
 }
 
+static bool calculate_md5(const char *file_path, char *digest)
+{
+    FILE *file = fopen(file_path, "r");
+
+    if (!file)
+        return false;
+
+    md5_context_t context;
+
+    esp_rom_md5_init(&context);
+
+    uint8_t buffer[1024U];
+    size_t read_bytes = 0;
+
+    while ((read_bytes = fread(buffer, 1, sizeof(buffer), file)))
+        esp_rom_md5_update(&context, buffer, read_bytes);
+
+    uint8_t digest_binary[16];
+
+    esp_rom_md5_final(digest_binary, &context);
+
+    fclose(file);
+
+    for (size_t i = 0; i < sizeof(digest_binary); i++)
+        digest += sprintf(digest, "%02x", digest_binary[i]);
+
+    return true;
+}
+
 static esp_err_t post_handler(httpd_req_t *request)
 {
     const auto server_impl = static_cast<file_server_implementation *>(request->user_ctx);
@@ -343,7 +373,14 @@ static esp_err_t post_handler(httpd_req_t *request)
 
     fclose(file);
 
-    httpd_resp_send(request, nullptr, 0);
+    char md5_digest[33];
+
+    if (!calculate_md5(file_path, md5_digest))
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+
+    md5_digest[32] = '\0';
+
+    httpd_resp_sendstr(request, md5_digest);
 
     return ESP_OK;
 }
