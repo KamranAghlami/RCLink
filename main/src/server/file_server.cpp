@@ -266,7 +266,7 @@ static esp_err_t get_handler(httpd_req_t *request)
     return ESP_OK;
 }
 
-static bool calculate_md5(const char *file_path, char *digest)
+static bool calculate_md5(const char *file_path, uint8_t *digest)
 {
     FILE *file = fopen(file_path, "r");
 
@@ -283,14 +283,9 @@ static bool calculate_md5(const char *file_path, char *digest)
     while ((read_bytes = fread(buffer, 1, sizeof(buffer), file)))
         esp_rom_md5_update(&context, buffer, read_bytes);
 
-    uint8_t digest_binary[16];
-
-    esp_rom_md5_final(digest_binary, &context);
+    esp_rom_md5_final(digest, &context);
 
     fclose(file);
-
-    for (size_t i = 0; i < sizeof(digest_binary); i++)
-        digest += sprintf(digest, "%02x", digest_binary[i]);
 
     return true;
 }
@@ -373,14 +368,21 @@ static esp_err_t post_handler(httpd_req_t *request)
 
     fclose(file);
 
-    char md5_digest[33];
+    uint8_t md5_digest[16];
 
     if (!calculate_md5(file_path, md5_digest))
+    {
+        unlink(file_path);
+
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
 
-    md5_digest[32] = '\0';
+        ESP_LOGE(TAG, "error while calculating md5! file: %s", file_path);
 
-    httpd_resp_sendstr(request, md5_digest);
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(request, "application/octet-stream");
+    httpd_resp_send(request, reinterpret_cast<char *>(md5_digest), sizeof(md5_digest));
 
     return ESP_OK;
 }
