@@ -134,6 +134,20 @@ private:
             ball->velocity.x = flip_vx ? -ball->velocity.x : ball->velocity.x;
             ball->velocity.y = flip_vy ? -ball->velocity.y : ball->velocity.y;
 
+            for (const auto b : m_balls)
+            {
+                if (b == ball)
+                    continue;
+
+                const auto dx = ball->position.x - b->position.x;
+                const auto dy = ball->position.y - b->position.y;
+
+                if ((dx * dx + dy * dy) <= 1024)
+                {
+                    // handle collision
+                }
+            }
+
             ball->position.x += ball->velocity.x * timestep;
             ball->position.y += ball->velocity.y * timestep;
 
