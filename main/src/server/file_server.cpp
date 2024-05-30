@@ -5,6 +5,9 @@
 #include <esp_err.h>
 #include <esp_log.h>
 #include <esp_http_server.h>
+#include <esp_partition.h>
+#include <esp_ota_ops.h>
+#include <esp_timer.h>
 #include <esp_rom_md5.h>
 
 constexpr const char *TAG = "file_server";
@@ -290,34 +293,114 @@ static bool calculate_md5(const char *file_path, uint8_t *digest)
     return true;
 }
 
-static esp_err_t post_handler(httpd_req_t *request)
+static esp_err_t update_firmware(httpd_req_t *request)
 {
-    const auto server_impl = static_cast<file_server_implementation *>(request->user_ctx);
+    const esp_partition_t *update_partition = esp_ota_get_next_update_partition(NULL);
 
-    const auto base_path_length = server_impl->base_path.size();
-    char file_path[CONFIG_LITTLEFS_OBJ_NAME_LEN] = {0};
-
-    file_path_from_uri(request->uri, server_impl->base_path.c_str(), file_path, sizeof(file_path));
-
-    if (!*file_path)
+    if (!update_partition)
     {
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+
+        ESP_LOGE(TAG, "no ota partition was found!");
 
         return ESP_FAIL;
     }
 
-    const char *file_name = file_path + base_path_length;
+    esp_ota_handle_t update_handle;
 
-    if (!strcmp(file_name, "/"))
-        strcat(file_path, "index.html");
-
-    if (file_path[strlen(file_path) - 1] == '/')
+    if (esp_ota_begin(update_partition, OTA_WITH_SEQUENTIAL_WRITES, &update_handle))
     {
         httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+
+        ESP_LOGE(TAG, "couldn't begin the ota session!");
+
+        esp_ota_abort(update_handle);
 
         return ESP_FAIL;
     }
 
+    {
+        uint8_t buffer[1024U];
+        size_t remaining_bytes = request->content_len;
+
+        while (remaining_bytes)
+        {
+            int received_bytes = httpd_req_recv(request, reinterpret_cast<char *>(buffer), std::min(remaining_bytes, static_cast<size_t>(sizeof(buffer))));
+
+            if (received_bytes < 0)
+            {
+                if (received_bytes == HTTPD_SOCK_ERR_TIMEOUT)
+                    continue;
+
+                httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+
+                ESP_LOGE(TAG, "error while receiving: %d", received_bytes);
+
+                return ESP_FAIL;
+            }
+
+            if (received_bytes && (esp_ota_write(update_handle, buffer, received_bytes) != ESP_OK))
+            {
+                httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+
+                ESP_LOGE(TAG, "error while writing firmware, aborting update...");
+
+                esp_ota_abort(update_handle);
+
+                return ESP_FAIL;
+            }
+
+            remaining_bytes -= received_bytes;
+        }
+    }
+
+    if (esp_err_t error = esp_ota_end(update_handle) != ESP_OK)
+    {
+        if (error == ESP_ERR_OTA_VALIDATE_FAILED)
+            ESP_LOGE(TAG, "firmware validation failed, image is corrupted!");
+        else
+            ESP_LOGE(TAG, "error while finalizing the ota session: %s", esp_err_to_name(error));
+
+        return ESP_FAIL;
+    }
+
+    if (esp_err_t error = esp_ota_set_boot_partition(update_partition))
+    {
+        ESP_LOGE(TAG, "updating the boot partition failed: %s", esp_err_to_name(error));
+
+        return ESP_FAIL;
+    }
+
+    httpd_resp_set_type(request, "application/octet-stream");
+    httpd_resp_send(request, nullptr, 0);
+
+    ESP_LOGI(TAG, "firmware update completed, rebooting in 5 seconds...");
+
+    static esp_timer_create_args_t timer_args = {};
+    static esp_timer_handle_t timer;
+
+    timer_args.arg = &timer;
+    timer_args.callback = [](void *argument)
+    {
+        auto timer = static_cast<esp_timer_handle_t *>(argument);
+        esp_timer_delete(*timer);
+
+        esp_restart();
+    };
+
+    if (esp_timer_create(&timer_args, &timer) != ESP_OK ||
+        esp_timer_start_once(timer, 5000000) != ESP_OK)
+    {
+        ESP_LOGE(TAG, "timer creation failed, restating now!");
+
+        esp_restart();
+    }
+
+    return ESP_OK;
+}
+
+static esp_err_t persist_file(httpd_req_t *request, const char *file_path)
+{
     FILE *file = fopen(file_path, "w");
 
     if (!file)
@@ -385,6 +468,40 @@ static esp_err_t post_handler(httpd_req_t *request)
     httpd_resp_send(request, reinterpret_cast<char *>(md5_digest), sizeof(md5_digest));
 
     return ESP_OK;
+}
+
+static esp_err_t post_handler(httpd_req_t *request)
+{
+    const auto server_impl = static_cast<file_server_implementation *>(request->user_ctx);
+
+    const auto base_path_length = server_impl->base_path.size();
+    char file_path[CONFIG_LITTLEFS_OBJ_NAME_LEN] = {0};
+
+    file_path_from_uri(request->uri, server_impl->base_path.c_str(), file_path, sizeof(file_path));
+
+    if (!*file_path)
+    {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+
+        return ESP_FAIL;
+    }
+
+    const char *file_name = file_path + base_path_length;
+
+    if (!strcmp(file_name, "/"))
+        strcat(file_path, "index.html");
+
+    if (file_name[strlen(file_name) - 1] == '/')
+    {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+
+        return ESP_FAIL;
+    }
+
+    if (!strcmp(file_name, "/firmware.bin"))
+        return update_firmware(request);
+    else
+        return persist_file(request, file_path);
 }
 
 file_server::file_server(const uint16_t port, const std::string &base_path) : mp_implementation(std::make_unique<file_server_implementation>())
