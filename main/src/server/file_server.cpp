@@ -10,6 +10,8 @@
 #include <esp_timer.h>
 #include <esp_rom_md5.h>
 
+#include <tlvcpp/utilities/hexdump.h>
+
 constexpr const char *TAG = "file_server";
 constexpr const UBaseType_t SERVER_CORE_ID = 1U;
 constexpr const UBaseType_t SERVER_PRIORITY = 5U;
@@ -339,6 +341,8 @@ static esp_err_t update_firmware(httpd_req_t *request)
                 return ESP_FAIL;
             }
 
+            tlvcpp::hexdump(buffer, received_bytes);
+
             if (received_bytes && (esp_ota_write(update_handle, buffer, received_bytes) != ESP_OK))
             {
                 httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
@@ -356,6 +360,8 @@ static esp_err_t update_firmware(httpd_req_t *request)
 
     if (esp_err_t error = esp_ota_end(update_handle) != ESP_OK)
     {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+
         if (error == ESP_ERR_OTA_VALIDATE_FAILED)
             ESP_LOGE(TAG, "firmware validation failed, image is corrupted!");
         else
@@ -366,13 +372,26 @@ static esp_err_t update_firmware(httpd_req_t *request)
 
     if (esp_err_t error = esp_ota_set_boot_partition(update_partition))
     {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+
         ESP_LOGE(TAG, "updating the boot partition failed: %s", esp_err_to_name(error));
 
         return ESP_FAIL;
     }
 
+    uint8_t sha_256[32] = {};
+
+    if (esp_partition_get_sha256(update_partition, sha_256) != ESP_OK)
+    {
+        httpd_resp_send_err(request, HTTPD_500_INTERNAL_SERVER_ERROR, nullptr);
+
+        ESP_LOGE(TAG, "couldn't calculate sha256 of the received partition!");
+
+        return ESP_FAIL;
+    }
+
     httpd_resp_set_type(request, "application/octet-stream");
-    httpd_resp_send(request, nullptr, 0);
+    httpd_resp_send(request, reinterpret_cast<char *>(sha_256), sizeof(sha_256));
 
     ESP_LOGI(TAG, "firmware update completed, rebooting in 5 seconds...");
 
@@ -433,6 +452,8 @@ static esp_err_t persist_file(httpd_req_t *request, const char *file_path)
                 return ESP_FAIL;
             }
 
+            tlvcpp::hexdump(buffer, received_bytes);
+
             if (received_bytes && (fwrite(buffer, 1, received_bytes, file) != received_bytes))
             {
                 fclose(file);
@@ -473,6 +494,14 @@ static esp_err_t persist_file(httpd_req_t *request, const char *file_path)
 static esp_err_t post_handler(httpd_req_t *request)
 {
     const auto server_impl = static_cast<file_server_implementation *>(request->user_ctx);
+
+    if (!is_on_worker(*server_impl))
+    {
+        if (server_impl->is_running)
+            return submit_work(*server_impl, request, post_handler);
+        else
+            return ESP_FAIL;
+    }
 
     const auto base_path_length = server_impl->base_path.size();
     char file_path[CONFIG_LITTLEFS_OBJ_NAME_LEN] = {0};
