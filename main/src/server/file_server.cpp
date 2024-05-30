@@ -338,6 +338,8 @@ static esp_err_t update_firmware(httpd_req_t *request)
 
                 ESP_LOGE(TAG, "error while receiving: %d", received_bytes);
 
+                esp_ota_abort(update_handle);
+
                 return ESP_FAIL;
             }
 
@@ -410,7 +412,7 @@ static esp_err_t update_firmware(httpd_req_t *request)
     if (esp_timer_create(&timer_args, &timer) != ESP_OK ||
         esp_timer_start_once(timer, 5000000) != ESP_OK)
     {
-        ESP_LOGE(TAG, "timer creation failed, restating now!");
+        ESP_LOGE(TAG, "timer creation failed, restarting now!");
 
         esp_restart();
     }
