@@ -1,4 +1,4 @@
-#include "file_server.h"
+#include "http_server.h"
 
 #include <sys/stat.h>
 
@@ -10,14 +10,14 @@
 #include <esp_timer.h>
 #include <esp_rom_md5.h>
 
-constexpr const char *TAG = "file_server";
+constexpr const char *TAG = "http_server";
 constexpr const UBaseType_t SERVER_CORE_ID = 1U;
 constexpr const UBaseType_t SERVER_PRIORITY = 5U;
 constexpr const uint32_t SERVER_STACK_SIZE = 8U * 1024U;
 constexpr const UBaseType_t WORKER_COUNT = 4U;
 constexpr const uint32_t WORKER_STACK_SIZE = 4U * 1024U;
 
-struct file_server_implementation
+struct http_server_implementation
 {
     SemaphoreHandle_t workers_semaphore;
     QueueHandle_t requests_queue;
@@ -37,7 +37,7 @@ struct request_context
 
 static void request_worker_task(void *argument)
 {
-    const auto server_impl = static_cast<file_server_implementation *>(argument);
+    const auto server_impl = static_cast<http_server_implementation *>(argument);
 
     while (true)
     {
@@ -54,7 +54,7 @@ static void request_worker_task(void *argument)
     }
 }
 
-static void start_workers(file_server_implementation &server_impl)
+static void start_workers(http_server_implementation &server_impl)
 {
     server_impl.is_running = true;
     server_impl.workers_semaphore = xSemaphoreCreateCounting(WORKER_COUNT, 0);
@@ -70,7 +70,7 @@ static void start_workers(file_server_implementation &server_impl)
                                 SERVER_CORE_ID);
 }
 
-static void stop_workers(file_server_implementation &server_impl)
+static void stop_workers(http_server_implementation &server_impl)
 {
     server_impl.is_running = false;
 
@@ -89,7 +89,7 @@ static void stop_workers(file_server_implementation &server_impl)
     vSemaphoreDelete(server_impl.workers_semaphore);
 }
 
-static bool is_on_worker(const file_server_implementation &server_impl)
+static bool is_on_worker(const http_server_implementation &server_impl)
 {
     TaskHandle_t current = xTaskGetCurrentTaskHandle();
 
@@ -100,7 +100,7 @@ static bool is_on_worker(const file_server_implementation &server_impl)
     return false;
 }
 
-static esp_err_t submit_work(const file_server_implementation &server_impl, httpd_req_t *request, request_handler handler)
+static esp_err_t submit_work(const http_server_implementation &server_impl, httpd_req_t *request, request_handler handler)
 {
     xSemaphoreTake(server_impl.workers_semaphore, portMAX_DELAY);
 
@@ -188,7 +188,7 @@ static esp_err_t add_content_type(httpd_req_t *request, const char *file_path)
 
 static esp_err_t get_handler(httpd_req_t *request)
 {
-    const auto server_impl = static_cast<file_server_implementation *>(request->user_ctx);
+    const auto server_impl = static_cast<http_server_implementation *>(request->user_ctx);
 
     if (!is_on_worker(*server_impl))
     {
@@ -490,7 +490,7 @@ static esp_err_t persist_file(httpd_req_t *request, const char *file_path)
 
 static esp_err_t post_handler(httpd_req_t *request)
 {
-    const auto server_impl = static_cast<file_server_implementation *>(request->user_ctx);
+    const auto server_impl = static_cast<http_server_implementation *>(request->user_ctx);
 
     const auto base_path_length = server_impl->base_path.size();
     char file_path[CONFIG_LITTLEFS_OBJ_NAME_LEN] = {0};
@@ -522,7 +522,7 @@ static esp_err_t post_handler(httpd_req_t *request)
         return persist_file(request, file_path);
 }
 
-file_server::file_server(const uint16_t port, const std::string &base_path) : mp_implementation(std::make_unique<file_server_implementation>())
+http_server::http_server(const uint16_t port, const std::string &base_path) : mp_implementation(std::make_unique<http_server_implementation>())
 {
     start_workers(*mp_implementation);
 
@@ -572,7 +572,7 @@ file_server::file_server(const uint16_t port, const std::string &base_path) : mp
 #endif
 }
 
-file_server::~file_server()
+http_server::~http_server()
 {
     stop_workers(*mp_implementation);
 

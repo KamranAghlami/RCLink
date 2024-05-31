@@ -9,7 +9,7 @@
 
 #include "hardware/display.h"
 #include "hardware/battery.h"
-#include "server/file_server.h"
+#include "server/http_server.h"
 #include "server/websocket_server.h"
 
 constexpr size_t initial_balls = 25;
@@ -31,11 +31,11 @@ struct ball
     } velocity;
 };
 
-class example : public application
+class rc_link : public application
 {
 public:
-    example() : mp_file_server(nullptr),
-                mp_websocket_server(nullptr),
+    rc_link() : mp_http_server(std::make_unique<http_server>(80, LV_FS_POSIX_PATH "/web")),
+                mp_websocket_server(std::make_unique<websocket_server>(81)),
                 m_width(hardware::display::get().width()),
                 m_height(hardware::display::get().height()),
                 m_group(lv_group_create()),
@@ -43,12 +43,31 @@ public:
     {
         m_sol_state.open_libraries();
 
-        {
-            struct stat file_stat;
+        struct stat file_stat;
 
-            if (!stat("/scripts/main.lua", &file_stat))
-                m_sol_state.script_file("/scripts/main.lua");
-        }
+        if (!stat("/scripts/main.lua", &file_stat))
+            m_sol_state.script_file("/scripts/main.lua");
+
+        auto websocket_task = [](void *argument)
+        {
+            auto &server = *static_cast<websocket_server *>(argument);
+
+            while (true)
+            {
+                tlvcpp::tlv_tree_node node;
+
+                server >> node;
+
+                if (node.data().tag() || node.children().size())
+                    server << node;
+
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+
+            vTaskDelete(nullptr);
+        };
+
+        xTaskCreatePinnedToCore(websocket_task, "dispatch_worker", 4U * 1024U, mp_websocket_server.get(), 5, &m_websocket_task, 0);
 
         lv_indev_t *indev = nullptr;
 
@@ -60,7 +79,7 @@ public:
 
         auto on_key = [](lv_event_t *e)
         {
-            auto app = static_cast<example *>(lv_event_get_user_data(e));
+            auto app = static_cast<rc_link *>(lv_event_get_user_data(e));
             auto key = lv_event_get_key(e);
 
             switch (key)
@@ -82,12 +101,14 @@ public:
         lv_obj_add_event_cb(m_screen, on_key, LV_EVENT_KEY, this);
     }
 
-    ~example()
+    ~rc_link()
     {
         while (m_balls.size())
             remove_ball();
 
         lv_group_del(m_group);
+
+        vTaskDelete(m_websocket_task);
     }
 
 private:
@@ -115,7 +136,7 @@ private:
 
         auto hud_update = [](lv_timer_t *timer)
         {
-            static_cast<example *>(timer->user_data)->update_hud();
+            static_cast<rc_link *>(timer->user_data)->update_hud();
         };
 
         lv_timer_create(hud_update, 200, this);
@@ -207,7 +228,7 @@ private:
 
         auto timer_cb = [](lv_timer_t *timer)
         {
-            auto app = static_cast<example *>(timer->user_data);
+            auto app = static_cast<rc_link *>(timer->user_data);
 
             if (app->m_balls.size() == initial_balls)
             {
@@ -233,51 +254,12 @@ private:
 
         lv_label_set_text_fmt(m_battery_voltage, "Battery: %lumv", m_voltage_level);
         lv_label_set_text_fmt(m_ball_count, "Balls: %zu", m_balls.size());
-
-        if (m_balls.size() > 20)
-        {
-            if (!mp_file_server)
-                mp_file_server = std::make_unique<file_server>(80, LV_FS_POSIX_PATH "/web");
-
-            if (!mp_websocket_server)
-            {
-                mp_websocket_server = std::make_unique<websocket_server>(81);
-
-                auto dispatch = [](void *argument)
-                {
-                    auto &server = *static_cast<websocket_server *>(argument);
-
-                    while (true)
-                    {
-                        tlvcpp::tlv_tree_node node;
-
-                        server >> node;
-
-                        if (node.data().tag() || node.children().size())
-                            server << node;
-
-                        vTaskDelay(pdMS_TO_TICKS(100));
-                    }
-
-                    vTaskDelete(nullptr);
-                };
-
-                xTaskCreatePinnedToCore(dispatch, "dispatch_worker", 4U * 1024U, mp_websocket_server.get(), 5, nullptr, 0);
-            }
-        }
-        else if (m_balls.size() < 5)
-        {
-            if (mp_file_server)
-                mp_file_server.reset();
-
-            if (mp_websocket_server)
-                mp_websocket_server.reset();
-        }
     }
 
     sol::state m_sol_state;
-    std::unique_ptr<file_server> mp_file_server;
+    std::unique_ptr<http_server> mp_http_server;
     std::unique_ptr<websocket_server> mp_websocket_server;
+    TaskHandle_t m_websocket_task;
 
     const uint16_t m_width;
     const uint16_t m_height;
@@ -296,5 +278,5 @@ private:
 
 std::unique_ptr<application> create_application()
 {
-    return std::make_unique<example>();
+    return std::make_unique<rc_link>();
 }
