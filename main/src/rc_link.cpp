@@ -144,8 +144,8 @@ private:
 
     void on_update(float timestep) override
     {
-        const auto max_x = m_width - 32;
-        const auto max_y = m_height - 32;
+        const auto max_x = m_width - 30;
+        const auto max_y = m_height - 30;
 
         for (const auto ball : m_balls)
         {
@@ -180,8 +180,8 @@ private:
 
         b->obj_handle = lv_img_create(m_screen);
 
-        b->position.x = (m_width / 2) - 16;
-        b->position.y = (m_height / 2) - 16;
+        b->position.x = (m_width / 2) - 15;
+        b->position.y = (m_height / 2) - 15;
         b->velocity.x = lv_rand(50, 150);
         b->velocity.y = lv_rand(50, 150);
 
@@ -191,10 +191,10 @@ private:
         if (lv_rand(0, 1))
             b->velocity.y = -b->velocity.y;
 
-        lv_obj_set_size(b->obj_handle, 32, 32);
+        lv_obj_set_size(b->obj_handle, 30, 30);
         lv_obj_set_pos(b->obj_handle, b->position.x, b->position.y);
 
-        lv_obj_set_style_radius(b->obj_handle, 16, LV_STATE_DEFAULT);
+        lv_obj_set_style_radius(b->obj_handle, 15, LV_STATE_DEFAULT);
         lv_obj_set_style_border_width(b->obj_handle, 0, LV_STATE_DEFAULT);
 
         char path[] = "F:/images/ball_0.png";
@@ -259,7 +259,7 @@ private:
         const float dx = b2.position.x - b1.position.x;
         const float dy = b2.position.y - b1.position.y;
         const float distance = std::sqrt(dx * dx + dy * dy);
-        const float penetration_depth = (16 + 16) - distance;
+        const float penetration_depth = (15 + 15) - distance;
         const float normal_x = dx / distance;
         const float normal_y = dy / distance;
         const float resolution_distance = penetration_depth / 2;
@@ -276,7 +276,7 @@ private:
         if (v_along_normal > 0)
             return;
 
-        const float j = -(1 + 0.95f) * v_along_normal / 2;
+        const float j = -(1 + 0.99f) * v_along_normal / 2;
         const float impulse_x = j * normal_x;
         const float impulse_y = j * normal_y;
 
