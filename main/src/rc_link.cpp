@@ -164,9 +164,7 @@ private:
                 const auto dy = ball->position.y - b->position.y;
 
                 if ((dx * dx + dy * dy) <= 1024)
-                {
-                    // handle collision
-                }
+                    resolve_collision(*b, *ball);
             }
 
             ball->position.x += ball->velocity.x * timestep;
@@ -254,6 +252,39 @@ private:
 
         lv_label_set_text_fmt(m_battery_voltage, "Battery: %lumv", m_voltage_level);
         lv_label_set_text_fmt(m_ball_count, "Balls: %zu", m_balls.size());
+    }
+
+    void resolve_collision(ball &b1, ball &b2)
+    {
+        const float dx = b2.position.x - b1.position.x;
+        const float dy = b2.position.y - b1.position.y;
+        const float distance = std::sqrt(dx * dx + dy * dy);
+        const float penetration_depth = (16 + 16) - distance;
+        const float nx = dx / distance;
+        const float ny = dy / distance;
+        const float resolution_distance = penetration_depth / 2;
+
+        b1.position.x -= nx * resolution_distance;
+        b1.position.y -= ny * resolution_distance;
+        b2.position.x += nx * resolution_distance;
+        b2.position.y += ny * resolution_distance;
+
+        const float rvx = b2.velocity.x - b1.velocity.x;
+        const float rvy = b2.velocity.y - b1.velocity.y;
+        const float v_along_normal = rvx * nx + rvy * ny;
+
+        if (v_along_normal > 0)
+            return;
+
+        const float restitution = 0.95f;
+        const float j = -(1 + restitution) * v_along_normal / 2;
+        const float impulseX = j * nx;
+        const float impulseY = j * ny;
+
+        b1.velocity.x -= impulseX;
+        b1.velocity.y -= impulseY;
+        b2.velocity.x += impulseX;
+        b2.velocity.y += impulseY;
     }
 
     sol::state m_sol_state;
