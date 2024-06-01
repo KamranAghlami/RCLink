@@ -38,7 +38,8 @@ jobs:
             build/partition_table/partition-table.bin
             build/ota_data_initial.bin
             build/${{github.event.repository.name}}.bin
-            
+          make_latest: true
+
       - name: GitHubAssistantBot Preprocess
         id: preprocess_commits
         if: success() || failure()
