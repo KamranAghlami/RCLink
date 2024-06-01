@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "develop"]
+  pull_request:
+    branches: ["develop"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Docker UID
+        run: echo "UID=$(id -u)" >> $GITHUB_ENV
+
+      - name: Build
+        run: docker run --rm -v ${{github.workspace}}:/project -w /project -u ${{env.UID}} -e HOME=/tmp espressif/idf idf.py build
