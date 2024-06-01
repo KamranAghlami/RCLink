@@ -18,15 +18,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Docker UID
-        run: echo "UID=$(id -u)" >> $GITHUB_ENV
-
       - name: Build
         run: |
           docker run --rm \
           -v ${{github.workspace}}:/project \
           -w /project \
-          -u ${{env.UID}} \
+          -u $(id -u) \
           -e HOME=/tmp \
           -e IDF_TARGET=${{matrix.board_target}} \
           espressif/idf:release-v5.2 \
@@ -34,6 +31,7 @@ jobs:
 
       - name: Release
         uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
             build/bootloader/bootloader.bin
