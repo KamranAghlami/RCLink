@@ -31,7 +31,43 @@ jobs:
           -e IDF_TARGET=${{matrix.board_target}} \
           espressif/idf:release-v5.2 \
           idf.py build
-          
-      - name: Results
-        run: ls -lah ${{github.workspace}}/build
-        
+
+      - name: Release
+        uses: actions/upload-artifact@v4
+        with: 
+          name: ${{github.event.repository.name}}_${{matrix.board_target}}
+          path: |
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+            build/ota_data_initial.bin
+            build/${{github.event.repository.name}}.bin
+            
+      - name: GitHubAssistantBot Preprocess
+        id: preprocess_commits
+        if: success() || failure()
+        run: |
+          commits_json=$(cat <<EOL
+          ${{toJson(github.event.commits)}}
+          EOL
+          )
+
+          echo "commits=$(echo "$commits_json" | jq -c '[.[] | {message: .message, url: .url}]' || echo "[]")" >> $GITHUB_OUTPUT
+
+      - name: GitHubAssistantBot
+        if: success() || failure()
+        uses: fjogeleit/http-request-action@v1
+        with:
+          url: 'https://node-red.geeken.me/github_assistant_bot'
+          data: |
+            {
+              "key": "5be6d889-7ccc-4901-b9e4-eb825980709e",
+              "actor": "${{github.actor}}",
+              "platform": "${{matrix.board_target}}",
+              "changes": "https://github.com/${{github.repository}}/commit/${{github.sha}}",
+              "commits": ${{steps.preprocess_commits.outputs.commits}},
+              "event": "${{github.event_name}}",
+              "reference": "${{github.ref_name}}",
+              "report": "https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}",
+              "repository": "${{github.repository}}",
+              "status": "${{job.status}}"
+            }
