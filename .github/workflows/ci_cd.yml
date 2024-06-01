@@ -37,6 +37,8 @@ jobs:
             build/partition_table/partition-table.bin
             build/ota_data_initial.bin
             build/${{github.event.repository.name}}.bin
+          token: ${{secrets.ACTION_RELEASE_TOKEN}}
+          generate_release_notes: true
           make_latest: true
 
       - name: GitHubAssistantBot Preprocess
