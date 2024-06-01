@@ -57,7 +57,7 @@ jobs:
           url: 'https://node-red.geeken.me/github_assistant_bot'
           data: |
             {
-              "key": "c218f740-fe70-4805-97b9-3bca6bcb1862",
+              "key": "${{secrets.ASSISTANT_BOT_KEY}}",
               "actor": "${{github.actor}}",
               "platform": "${{matrix.board_target}}",
               "changes": "https://github.com/${{github.repository}}/commit/${{github.sha}}",
