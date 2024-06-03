@@ -27,7 +27,7 @@ jobs:
           -e HOME=/tmp \
           -e IDF_TARGET=${{matrix.board_target}} \
           espressif/idf:release-v5.2 \
-          idf.py build | tee >(grep ' build/${{github.event.repository.name}}.bin' > build/offsets.txt)
+          idf.py build | tee >(grep ' build/${{github.event.repository.name}}.bin' | awk '{for (i = 1; i <= NF; i++) {if ($i ~ /^0x[0-9a-fA-F]+$/) offset = $i; else if ($i ~ /\.bin$/) {gsub(/^.*\//, "", $i); print offset, $i}}}' > build/offsets.txt)
 
       - name: Package
         if: startsWith(github.ref, 'refs/tags/')
