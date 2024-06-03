@@ -30,7 +30,6 @@ jobs:
 
       - name: Package
         if: startsWith(github.ref, 'refs/tags/')
-        working-directory: ${{github.workspace}}/build
         run: |
           tar -zcvf ${{github.event.repository.name}}_${{github.ref_name}}.tar.gz \
           build/bootloader/bootloader.bin \
