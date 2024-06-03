@@ -28,16 +28,23 @@ jobs:
           espressif/idf:release-v5.2 \
           idf.py build
 
+      - name: Package
+        if: startsWith(github.ref, 'refs/tags/')
+        working-directory: ${{github.workspace}}/build
+        run: |
+          tar -zcvf ${{github.event.repository.name}}_${{github.ref_name}}.tar.gz \
+          build/bootloader/bootloader.bin \
+          build/partition_table/partition-table.bin \
+          build/ota_data_initial.bin \
+          build/${{github.event.repository.name}}.bin \
+          build/storage.bin
+          
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/bootloader/bootloader.bin
-            build/partition_table/partition-table.bin
-            build/ota_data_initial.bin
-            build/${{github.event.repository.name}}.bin
-            build/storage.bin
+            ${{github.event.repository.name}}_${{github.ref_name}}.tar.gz
           token: ${{secrets.ACTION_RELEASE_TOKEN}}
           generate_release_notes: true
           make_latest: true
