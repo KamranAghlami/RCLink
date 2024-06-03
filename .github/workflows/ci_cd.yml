@@ -33,7 +33,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           grep 'storage' main/partitions.csv | awk -F, '{print $4 " storage.bin"}' | sed 's/^ //g' >> build/offsets.txt
-          awk '{printf "{\"offset\":\"%s\", \"file\":\"%s\"}\n", $1, $2}' build/offsets.txt | jq -s '.' > build/offsets.json
+          awk '{printf "{\"offset\":\"%s\", \"file\":\"%s\"}\n", $1, $2}' build/offsets.txt | jq -c -s '.' > build/offsets.json
           
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
