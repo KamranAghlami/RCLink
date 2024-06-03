@@ -19,6 +19,7 @@ jobs:
 
       - name: Build
         run: |
+          mkdir build
           docker run --rm \
           -v ${{github.workspace}}:/project \
           -w /project \
