@@ -5,17 +5,6 @@ import tarfile
 GITHUB_RELEASES_URL = "https://api.github.com/repos/KamranAghlami/RCLinkWebUI/releases/latest"
 OUTPUT_DIRECTORY = os.path.join(os.path.dirname(__file__), '../main/app/web')
 
-def is_directory_empty(path):
-    files = os.listdir(path)
-
-    if not files:
-        return True
-
-    if len(files) == 1 and files[0] == '.gitkeep':
-        return True
-
-    return False
-
 def download_file(url, output):
     with requests.get(url, stream=True) as response:
         response.raise_for_status()
@@ -32,8 +21,7 @@ if __name__ == "__main__":
     try:
         if not os.path.exists(OUTPUT_DIRECTORY):
             os.makedirs(OUTPUT_DIRECTORY)
-
-        if is_directory_empty(OUTPUT_DIRECTORY):
+            
             response = requests.get(GITHUB_RELEASES_URL)
             response.raise_for_status()
             assets = response.json()['assets']

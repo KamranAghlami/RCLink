@@ -1,7 +1,7 @@
 .vscode
 [Bb][Uu][Ii][Ll][Dd]
 components
-main/app/web/*
+main/app/web
 debug.log
 dependencies.lock
 managed_components
