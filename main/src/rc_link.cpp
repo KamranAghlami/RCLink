@@ -8,6 +8,7 @@
 #include <sol/sol.hpp>
 
 #include "hardware/display.h"
+#include "hardware/wifi.h"
 #include "hardware/battery.h"
 #include "server/http_server.h"
 #include "server/websocket_server.h"
@@ -116,6 +117,21 @@ private:
     {
         lv_obj_clear_flag(m_screen, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_style_bg_color(m_screen, lv_color_black(), LV_STATE_DEFAULT);
+
+        m_ip = lv_label_create(lv_layer_top());
+
+        lv_obj_set_style_text_color(m_ip, lv_color_white(), LV_STATE_DEFAULT);
+        lv_obj_align(m_ip, LV_ALIGN_BOTTOM_LEFT, 4, -76);
+
+        m_netmask = lv_label_create(lv_layer_top());
+
+        lv_obj_set_style_text_color(m_netmask, lv_color_white(), LV_STATE_DEFAULT);
+        lv_obj_align(m_netmask, LV_ALIGN_BOTTOM_LEFT, 4, -58);
+
+        m_gatway = lv_label_create(lv_layer_top());
+
+        lv_obj_set_style_text_color(m_gatway, lv_color_white(), LV_STATE_DEFAULT);
+        lv_obj_align(m_gatway, LV_ALIGN_BOTTOM_LEFT, 4, -40);
 
         m_battery_voltage = lv_label_create(lv_layer_top());
 
@@ -250,6 +266,12 @@ private:
 
     void update_hud()
     {
+        auto &wifi = hardware::wifi::get();
+
+        lv_label_set_text_fmt(m_ip, "IP: %s", wifi.get_ip());
+        lv_label_set_text_fmt(m_netmask, "Netmask: %s", wifi.get_netmask());
+        lv_label_set_text_fmt(m_gatway, "Gateway: %s", wifi.get_gateway());
+
         m_voltage_level = 0.9f * m_voltage_level + 0.1f * hardware::battery::get().voltage_level();
 
         lv_label_set_text_fmt(m_battery_voltage, "Battery: %lumv", m_voltage_level);
@@ -299,6 +321,9 @@ private:
     lv_group_t *m_group;
     lv_obj_t *m_screen;
 
+    lv_obj_t *m_ip;
+    lv_obj_t *m_netmask;
+    lv_obj_t *m_gatway;
     lv_obj_t *m_battery_voltage;
     lv_obj_t *m_ball_count;
 
