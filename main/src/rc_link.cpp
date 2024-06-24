@@ -118,6 +118,11 @@ private:
         lv_obj_clear_flag(m_screen, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_set_style_bg_color(m_screen, lv_color_black(), LV_STATE_DEFAULT);
 
+        m_ssid = lv_label_create(lv_layer_top());
+
+        lv_obj_set_style_text_color(m_ssid, lv_color_white(), LV_STATE_DEFAULT);
+        lv_obj_align(m_ssid, LV_ALIGN_BOTTOM_LEFT, 4, -94);
+
         m_ip = lv_label_create(lv_layer_top());
 
         lv_obj_set_style_text_color(m_ip, lv_color_white(), LV_STATE_DEFAULT);
@@ -268,6 +273,7 @@ private:
     {
         auto &wifi = hardware::wifi::get();
 
+        lv_label_set_text_fmt(m_ssid, "SSID: %s", wifi.get_ssid());
         lv_label_set_text_fmt(m_ip, "IP: %s", wifi.get_ip());
         lv_label_set_text_fmt(m_netmask, "Netmask: %s", wifi.get_netmask());
         lv_label_set_text_fmt(m_gatway, "Gateway: %s", wifi.get_gateway());
@@ -321,6 +327,7 @@ private:
     lv_group_t *m_group;
     lv_obj_t *m_screen;
 
+    lv_obj_t *m_ssid;
     lv_obj_t *m_ip;
     lv_obj_t *m_netmask;
     lv_obj_t *m_gatway;
