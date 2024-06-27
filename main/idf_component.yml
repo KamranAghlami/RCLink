@@ -1,6 +1,8 @@
 dependencies:
   idf:
     version: ">=5.1.1"
+  application:
+    git: https://github.com/KamranAghlami/idf_component_application.git
   lua:
     git: https://github.com/KamranAghlami/idf_component_lua.git
   libtlvcpp:

@@ -1,6 +1,6 @@
 file(GLOB_RECURSE SOURCES "src/*.c" "src/*.cpp")
 
-idf_component_register(SRCS ${SOURCES} PRIV_INCLUDE_DIRS "src" PRIV_REQUIRES board esp_http_server esp_partition app_update esp_rom lua)
+idf_component_register(SRCS ${SOURCES} PRIV_INCLUDE_DIRS "src" PRIV_REQUIRES application esp_http_server esp_partition app_update esp_rom lua)
 
 find_program(PYTHON_COMMAND python3 REQUIRED)
 
