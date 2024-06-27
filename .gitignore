@@ -6,5 +6,5 @@ debug.log
 dependencies.lock
 managed_components
 partition_table
-sdkconfig.*
+sdkconfig*
 .DS_Store
