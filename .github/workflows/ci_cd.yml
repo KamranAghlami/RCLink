@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        board_target: [esp32s3]
+        target_board: [T-Display-S3, T-Encoder-Pro]
 
     runs-on: ubuntu-latest
 
@@ -25,27 +25,26 @@ jobs:
           -w /project \
           -u $(id -u) \
           -e HOME=/tmp \
-          -e IDF_TARGET=${{matrix.board_target}} \
+          -e IDF_TARGET=esp32s3 \
           espressif/idf:release-v5.2 \
-          idf.py build | tee >(grep ' build/${{github.event.repository.name}}.bin' | awk '{for (i = 1; i <= NF; i++) {if ($i ~ /^0x[0-9a-fA-F]+$/) offset = $i; else if ($i ~ /\.bin$/) {gsub(/^.*\//, "", $i); print offset, $i}}}' > build/offsets.txt)
+          idf.py build -DTARGET_BOARD=${{matrix.target_board}} | tee >(grep ' build/${{github.event.repository.name}}.bin' | awk '{for (i = 1; i <= NF; i++) {if ($i ~ /^0x[0-9a-fA-F]+$/) offset = $i; else if ($i ~ /\.bin$/) {gsub(/^.*\//, "", $i); print offset, $i}}}' > build/offsets.txt)
 
       - name: Package
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          grep 'storage' main/partitions.csv | awk -F, '{print $4 " storage.bin"}' | sed 's/^ //g' >> build/offsets.txt
-          awk '{printf "{\"offset\":\"%s\", \"file\":\"%s\"}\n", $1, $2}' build/offsets.txt | jq -c -s '.' > build/offsets.json
-          
+          mkdir build/${{matrix.target_board}}
+          grep 'storage' components/board/partitions.csv | awk -F, '{print $4 " storage.bin"}' | sed 's/^ //g' >> build/offsets.txt
+          cd build
+          awk '{printf "{\"offset\":\"%s\", \"file\":\"%s\"}\n", $1, $2}' offsets.txt | jq -c -s '.' > ${{matrix.target_board}}/offsets.json
+          cp bootloader/bootloader.bin partition_table/partition-table.bin ota_data_initial.bin ${{github.event.repository.name}}.bin storage.bin ${{matrix.target_board}}
+          tar -zcf ${{matrix.target_board}}.tar.gz ${matrix.target_board}
+
       - name: Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/bootloader/bootloader.bin
-            build/partition_table/partition-table.bin
-            build/ota_data_initial.bin
-            build/${{github.event.repository.name}}.bin
-            build/storage.bin
-            build/offsets.json
+            build/${{matrix.target_board}}.tar.gz
           token: ${{secrets.ACTION_RELEASE_TOKEN}}
           generate_release_notes: true
           make_latest: true
@@ -70,7 +69,7 @@ jobs:
             {
               "key": "${{secrets.ASSISTANT_BOT_KEY}}",
               "actor": "${{github.actor}}",
-              "platform": "${{matrix.board_target}}",
+              "platform": "${{matrix.target_board}}",
               "changes": "https://github.com/${{github.repository}}/commit/${{github.sha}}",
               "commits": ${{steps.preprocess_commits.outputs.commits}},
               "event": "${{github.event_name}}",
