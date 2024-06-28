@@ -15,7 +15,7 @@ if(NOT EXISTS ${CMAKE_SOURCE_DIR}/components/board)
   elseif(${TARGET_BOARD} STREQUAL T-Encoder-Pro)
     set(TARGET_BOARD_URL "https://github.com/KamranAghlami/idf_component_t_encoder_pro")
   else()
-    message(FATAL_ERROR "TARGET_BOARD is unspecified.")
+    message(FATAL_ERROR "TARGET_BOARD is unspecified, try -DTARGET_BOARD=YOUR_BOARD CMake configure argument.")
   endif()
 
   execute_process(
